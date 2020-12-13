@@ -336,7 +336,10 @@ class ManagerBone(KeyManager):
             return item, 0
 
         for num, bone in enumerate(content):
-            item.dict_str[bone.name or f'Bone{num}'] = bone
+            if not bone.name:
+                bone.name = f'Bone{num}'
+
+            item.dict_str[bone.name] = bone
             item.dict_int[num] = bone
 
         return item, offset
