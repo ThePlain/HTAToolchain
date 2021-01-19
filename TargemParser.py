@@ -1,5 +1,6 @@
 import os
-from .TargemType import Type, KeyManager
+import struct
+from TargemType import Type, KeyManager
 
 
 class VertexType:
@@ -77,43 +78,70 @@ class VertexType:
     class XYZ(Type.Struct):             # 0x00 @ 12
         position: Type.Float(3)
 
+        def pack(self) -> bytes:
+            return struct.pack('<3f', *self.position)
+
     class XYZT1(Type.Struct):           # 0x01 @ 20
         position: Type.Float(3)
         uv0: Type.Float(2)
+
+        def pack(self) -> bytes:
+            return struct.pack('<3f2f', *self.position, *self.uv0)
 
     class XYZC(Type.Struct):            # 0x02 @ 16
         position: Type.Float(3)
         color: Type.UInt8(4)
 
+        def pack(self) -> bytes:
+            return struct.pack('<3f4B', *self.position, *self.color)
+
     class XYZWC(Type.Struct):           # 0x03 @ 20
         position: Type.Float(4)
         color: Type.UInt8(4)
+
+        def pack(self) -> bytes:
+            return struct.pack('<4f4B', *self.position, *self.color)
 
     class XYZWCT1(Type.Struct):         # 0x04
         position: Type.Float(4)
         color: Type.UInt8(4)
         uv0: Type.Float(2)
 
+        def pack(self) -> bytes:
+            return struct.pack('<3f4B2F', *self.position, *self.color, *self.uv0)
+
     class XYZNC(Type.Struct):           # 0x05
         position: Type.Float(3)
         normal: Type.Float(3)
         color: Type.UInt8(4)
+
+        def pack(self) -> bytes:
+            return struct.pack('<3f3f4B', *self.position, *self.normal, *self.color)
 
     class XYZCT1(Type.Struct):          # 0x06
         position: Type.Float(3)
         color: Type.UInt8(4)
         uv0: Type.Float(2)
 
+        def pack(self) -> bytes:
+            return struct.pack('<3f4B2f', *self.position, *self.color, *self.uv0)
+
     class XYZNT1(Type.Struct):          # 0x07
         position: Type.Float(3)
         normal: Type.Float(3)
         uv0: Type.Float(2)
+
+        def pack(self) -> bytes:
+            return struct.pack('<3f3f2f', *self.position, *self.normal, *self.uv0)
 
     class XYZNCT1(Type.Struct):         # 0x08
         position: Type.Float(3)
         normal: Type.Float(3)
         color: Type.UInt8(4)
         uv0: Type.Float(2)
+
+        def pack(self) -> bytes:
+            return struct.pack('<3f3f4B2f', *self.position, *self.normal, *self.color, *self.uv0)
 
     class XYZNCT2(Type.Struct):         # 0x09
         position: Type.Float(3)
@@ -122,11 +150,17 @@ class VertexType:
         uv0: Type.Float(2)
         uv1: Type.Float(2)
 
+        def pack(self) -> bytes:
+            return struct.pack('<3f3f4B2f2f', *self.position, *self.normal, *self.color, *self.uv0, *self.uv1)
+
     class XYZNT2(Type.Struct):          # 0x0A
         position: Type.Float(3)
         normal: Type.Float(3)
         uv0: Type.Float(2)
         uv1: Type.Float(2)
+
+        def pack(self) -> bytes:
+            return struct.pack('<3f3f2f2f', *self.position, *self.normal, *self.uv0, *self.uv1)
 
     class XYZNT3(Type.Struct):          # 0x0B
         position: Type.Float(3)
@@ -135,10 +169,16 @@ class VertexType:
         uv1: Type.Float(2)
         uv3: Type.Float(2)
 
+        def pack(self) -> bytes:
+            return struct.pack('<3f3f2f2f2f', *self.position, *self.normal, *self.uv0, *self.uv1, *self.uv2)
+
     class XYZCT1_UVW(Type.Struct):      # 0x0C
         position: Type.Float(3)
         color: Type.UInt8(4)
         uv0: Type.Float(3)
+
+        def pack(self) -> bytes:
+            return struct.pack('<3f4f3f', *self.position, *self.color, *self.uv0)
 
     class XYZCT2_UVW(Type.Struct):      # 0x0D
         position: Type.Float(3)
@@ -146,11 +186,17 @@ class VertexType:
         uv0: Type.Float(3)
         uv1: Type.Float(2)
 
+        def pack(self) -> bytes:
+            return struct.pack('<3f4B3f2f', *self.position, *self.color, *self.uv0, *self.uv1)
+
     class XYZCT2(Type.Struct):          # 0x0E
         position: Type.Float(3)
         color: Type.UInt8(4)
         uv0: Type.Float(2)
         uv1: Type.Float(2)
+
+        def pack(self) -> bytes:
+            return struct.pack('<3f4B2f2f', *self.position, *self.color, *self.uv0, *self.uv1)
 
     class XYZNT1T(Type.Struct):         # 0x0F
         position: Type.Float(3)
@@ -158,12 +204,18 @@ class VertexType:
         uv0: Type.Float(2)
         tangent: Type.Float(4)
 
+        def pack(self) -> bytes:
+            return struct.pack('<3f3f2f4f', *self.position, *self.normal, *self.uv0, *self.tangent)
+
     class XYZNCT1T(Type.Struct):        # 0x10
         position: Type.Float(3)
         normal: Type.Float(3)
         color: Type.UInt8(4)
         uv0: Type.Float(2)
         tangent: Type.Float(4)
+
+        def pack(self) -> bytes:
+            return struct.pack('<3f3f4B2f4f', *self.position, *self.normal, *self.color, *self.uv0, *self.tangent)
 
     class XYZNCT1_UV2_S1(Type.Struct):  # 0x11
         pass
@@ -217,6 +269,26 @@ class VertexType:
         24: INSTANCE,
     }
 
+    SAM_PACK_TYPE = {
+        'XYZ':          ((0, 12), ),
+        'XYZT1':        ((0, 12), (3,  8), ),
+        'XYZC':         ((0, 12), (2,  4), ),
+        'XYZWC':        ((0, 16), (2,  4), ),
+        'XYZWCT1':      ((0, 16), (2,  4), (3,  8), ),
+        'XYZNC':        ((0, 12), (1, 12), (2,  4), ),
+        'XYZCT1':       ((0, 12), (2,  4), (3,  8), ),
+        'XYZNT1':       ((0, 12), (1, 12), (3,  8), ),
+        'XYZNCT1':      ((0, 12), (1, 12), (2,  4), (3,  8)),
+        'XYZNCT2':      ((0, 12), (1, 12), (2,  4), (3,  8), (4, 8),),
+        'XYZNT2':       ((0, 12), (1, 12), (3,  8), (4,  4),),
+        'XYZNT3':       ((0, 12), (1, 12), (3,  8), (4,  4), (5, 8), ),
+        'XYZCT1_UVW':   ((0, 12), (2,  4), (3,  12), ),
+        'XYZCT2_UVW':   ((0, 12), (2,  4), (3,  12), (4,  4), ),
+        'XYZCT2':       ((0, 12), (2,  4), (3,  8), (4,  4), ),
+        'XYZNT1T':      ((0, 12), (1, 12), (3,  8), (0x14, 16), ),
+        'XYZNCT1T':     ((0, 12), (1, 12), (2,  4), (3,  8), (0x14, 16), ),
+    }
+
 
 class FileHeaderItem(Type.Struct):
     tag: Type.UInt32()
@@ -242,6 +314,14 @@ class ManagerHeader(KeyManager):
             item.dict_int[header.tag] = header
 
         return item, offset
+
+    def pack(self) -> (int, bytes):
+        content = b''
+
+        for item in self:
+            content += struct.pack('<IIL', item.tag, item.size, item.offset)
+
+        return None, content
 
 
 class DraftMeta(Type.Struct):
@@ -294,6 +374,37 @@ class FileMeta(Type.Union):
         item.apply(content)
         return item, size
 
+    def pack(self, mode) -> (int, bytes):
+        if mode == 'sam':
+            return self.pack_sam()
+
+        if mode == 'gam':
+            return self.pack_gam()
+
+    def pack_sam(self) -> (int, bytes):
+        content = struct.pack(
+            '<4I',
+            self.count_mesh,
+            self.count_material,
+            self.count_node,
+            self.count_animation)
+
+        return 0x0006, content
+
+    def pack_gam(self) -> (int, bytes):
+        content = struct.pack(
+            '<6HI',
+            self.count_triangle,
+            self.count_skin,
+            self.count_static,
+            self.count_animation,
+            self.count_material,
+            self.count_node,
+            self.size_cfg,
+        )
+
+        return 0x0001, content
+
 
 class DraftBone(Type.Struct):
     name: Type.CString(40)
@@ -313,9 +424,9 @@ class ModelBone(Type.Struct):
 
 class FileBone(Type.Union):
     name: str = ''
-    parent: int = 0
-    location: list = None
-    rotation: list = None
+    parent: int = -1
+    location: list = [0, 0, 0]
+    rotation: list = [0, 0, 0, 1]
     scale: list = [1, 1, 1]
     inverse: list = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 
@@ -344,6 +455,40 @@ class ManagerBone(KeyManager):
 
         return item, offset
 
+    def pack(self, mode) -> (int, bytes):
+        if mode == 'sam':
+            return self.pack_sam()
+        if mode == 'gam':
+            return self.pack_gam()
+
+    def pack_sam(self) -> (int, bytes):
+        content = b''
+
+        for item in self:
+            content += item.encode('cp1251').rjust(b'\x00', 40)
+            content += struct.pack(
+                '<h3f4f3f',
+                item.parent,
+                *item.location,
+                *item.rotation,
+                *item.scale,
+            )
+
+        return 0x0003, content
+
+    def pack_gam(self) -> (int, bytes):
+        content = b''
+
+        for item in self:
+            content += item.encode('cp1251').rjust(b'\x00', 40)
+            content += struct.pack(
+                '<i3f4f16f',
+                *item.location,
+                *item.rotation,
+                *item.inverse,
+            )
+
+        return 0x0002, content
 
 class DraftInfluenceItem(Type.Struct):
     bone: Type.Int16()
@@ -406,6 +551,32 @@ class FileInfluence(Type.Union):
         item.apply(content)
         return item, size
 
+    def pack(self, mode) -> bytes:
+        content = struct.pack('<H', len(self.count_bone))
+
+        if mode == 'sam':
+            for influence in self.influences:
+                content += struct.pack('<Hf', influence.bone, influence.weight)
+
+        if mode == 'gam':
+            if len(self.influences) > 4:
+                raise ValueError('GAM not support more that 4 bone per vertex')
+
+            for influence in self.influences:
+                content += struct.pack(
+                    '<Hf3f3f',
+                    influence.bone,
+                    influence.weight,
+                    *influence.offset,
+                    *influence.normal,
+                )
+
+            align = 4 - len(self.influences)
+            if align > 0:
+                content += b'\x00' * 30 * align
+
+        return content
+
 
 class DraftMesh(Type.Struct):
     type: Type.UInt32()
@@ -443,6 +614,7 @@ class FileMesh(Type.Union):
     vertexes: list = None
     influences: list = None
     indices: list = None
+    animation: bool = False
 
     @classmethod
     def unpack(cls, buffer, mode):
@@ -494,9 +666,7 @@ class FileMesh(Type.Union):
         item.vertex_headers = content
         offset += size
 
-        item.struct_vertexes, animation = VertexType.from_headers(item.vertex_headers)
-        print(item.vertex_headers)
-        print(item.struct_vertexes)
+        item.struct_vertexes, self.animation = VertexType.from_headers(item.vertex_headers)
 
         item.vertexes = []
         for _ in range(item.count_vertexes):
@@ -549,7 +719,7 @@ class FileMesh(Type.Union):
 #        item.vertexes = content
 #        offset += size
 
-        if animation:
+        if self.animation:
             content, size = Type.FixedStructVector(item.count_vertexes, DraftInfluence)(buffer[offset:])
             item.influences = content
             offset += size
@@ -560,6 +730,82 @@ class FileMesh(Type.Union):
 
         return item, offset
 
+    def pack(self, mode) -> (int, bytes):
+        if mode == 'sam':
+            return self.pack_sam()
+        if mode == 'gam':
+            return self.pack_gam()
+
+    def pack_sam(self) -> (int, bytes):
+        content = b''
+
+        content += struct.pack(
+            '<IhIIh',
+            item.type,
+            item.material,
+            item.count_vertexes,
+            item.count_indices,
+            item.parent,
+        )
+
+        vertex_header = VertexType.SAM_PACK_TYPE
+        content += struct.pack(f'<{len(vertex_header) * 2}i', *sum(vertex_header, ()))
+
+        if item.animation:
+            content += struct.pack('<ii', 0x16, 0)
+
+        vcount = item.vertex_count
+        for vtype, vsize in vertex_header:
+            if vtype == 0:
+                elems = int(vsize / 4)
+                content += struct.pack(f'<{vcount * elems}f', *sum([v.position for v in item.vertexes], []))
+            if vtype == 1:
+                content += struct.pack(f'<{vcount * 3}f', *sum([v.normal for v in item.vertexes], []))
+            if vtype == 2:
+                content += struct.pack(f'<{vcount * 4}B', *sum([v.color for v in item.vertexes], []))
+            if vtype == 3:
+                elems = int(vsize / 4)
+                content += struct.pack(f'<{vcount * elems}f', *sum([v.uv0 for v in item.vertexes], []))
+            if vtype == 4:
+                content += struct.pack(f'<{vcount * 2}f', *sum([v.uv1 for v in item.vertexes], []))
+            if vtype == 5:
+                content += struct.pack(f'<{vcount * 2}f', *sum([v.uv2 for v in item.vertexes], []))
+            if vtype == 0x14:
+                content += struct.pack(f'<{vcount * 4}f', *sum([v.tangent for v in item.vertexes], []))
+
+        if item.animation:
+            for influence in self.influences:
+                content += influence.pack('sam')
+
+        icount = item.count_indices
+        content += struct.pack(f'<{icount * 3}H', *sum(item.indices, []))
+
+        return content
+
+    def pack_gam(self) -> (int, bytes):
+        content = b''
+
+        content += item.name.encode('cp1251').rjust(b'\x00', 40)
+        content += struct.pack(
+            '<4i4I',
+            item.type,
+            item.parent,
+            item.group,
+            item.material,
+            item.size_vertexes,
+            item.type_vertexes,
+            item.count_vertexes,
+            item.count_indices,
+        )
+
+        for vert in item.vertexes:
+            content += vert.pack()
+
+        if item.animation:
+            for influence in self.influences:
+                content += influence.pack('gam')
+
+        return content
 
 class ManagerMesh(KeyManager):
     @classmethod
@@ -572,6 +818,18 @@ class ManagerMesh(KeyManager):
             item.dict_str[mesh.name or f'Mesh{num}'] = mesh
 
         return item, size
+
+    def pack(self, mode):
+        content = b''
+
+        for item in self:
+            content += item.pack(mode)
+
+        if mode == 'sam':
+            return 0x0001, content
+
+        if mode == 'gam':
+            return 0x0001, content
 
 
 class DraftChange(Type.Struct):
@@ -1129,7 +1387,7 @@ class Parser:
                 self.info.config = mode
             if header.tag == 0x0002:
                 self.nodes, size = ManagerBone.unpack(buffer[header.offset:], 'gam', self.info)
-            if header.tag == 0x0004:
+            if header.tag == 0x0001:
                 self.meshes, size = ManagerMesh.unpack(buffer[header.offset:], 'gam', self.info)
             if header.tag == 0x0008:
                 self.animations, size = ManagerAnimation.unpack(buffer[header.offset:], 'gam', self.info)
