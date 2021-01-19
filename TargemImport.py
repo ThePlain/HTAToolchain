@@ -270,8 +270,8 @@ class ImportGAMFile(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
     game_type: bpy.props.EnumProperty(
         name='Game version',
         items={
-            ('hta', 'Hard Truck Apocalypce', ''),
-            ('113', 'Rise of Clans', ''),
+            ('hta', 'Hard Truck Apocalypse', ''),
+            ('113', 'Hard Truck Apocalypse: Rise of Clans', ''),
         },
         default='hta',
     )
@@ -293,8 +293,8 @@ class ImportSAMFile(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
     game_type: bpy.props.EnumProperty(
         name='Game version',
         items={
-            ('hta', 'Hard Truck Apocalypce', ''),
-            ('113', 'Rise of Clans', ''),
+            ('hta', 'Hard Truck Apocalypse', ''),
+            ('113', 'Hard Truck Apocalypse: Rise of Clans', ''),
         },
         default='hta',
     )
