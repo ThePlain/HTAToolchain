@@ -826,7 +826,7 @@ class ManagerMesh(KeyManager):
             content += item.pack(mode)
 
         if mode == 'sam':
-            return 0x0001, content
+            return 0x0004, content
 
         if mode == 'gam':
             return 0x0001, content
@@ -1387,7 +1387,7 @@ class Parser:
                 self.info.config = mode
             if header.tag == 0x0002:
                 self.nodes, size = ManagerBone.unpack(buffer[header.offset:], 'gam', self.info)
-            if header.tag == 0x0001:
+            if header.tag == 0x0004:
                 self.meshes, size = ManagerMesh.unpack(buffer[header.offset:], 'gam', self.info)
             if header.tag == 0x0008:
                 self.animations, size = ManagerAnimation.unpack(buffer[header.offset:], 'gam', self.info)
