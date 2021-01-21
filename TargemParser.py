@@ -167,7 +167,7 @@ class VertexType:
         normal: Type.Float(3)
         uv0: Type.Float(2)
         uv1: Type.Float(2)
-        uv3: Type.Float(2)
+        uv2: Type.Float(2)
 
         def pack(self) -> bytes:
             return struct.pack('<3f3f2f2f2f', *self.position, *self.normal, *self.uv0, *self.uv1, *self.uv2)
@@ -937,6 +937,66 @@ class FileAnimation(Type.Union):
 
         return item, offset
 
+    def pack(self, mode) -> bytes:
+        if mode == 'sam':
+            return self.pack_sam()
+
+        if mode == 'gam':
+            return self.pack_gam()
+
+    def pack_sam(self) -> bytes:
+        content = self.name.encode('cp1251').rjust(25)
+        content += struct.pack(
+            '<IIiI',
+            self.frames,
+            self.fps,
+            self.next,
+            self.changes,
+        )
+        for item in self.modifies:
+            content += struct.pack(
+                '<Ihh',
+                item.type,
+                item.index,
+                item.parent,
+            )
+        for item in self.keyframes:
+            content += struct.pack(
+                '<3f4f3f',
+                *item.position,
+                *item.rotaiton,
+                *item.scale,
+            )
+        return content
+
+    def pack_gam(self) -> bytes:
+        content = self.name.encode('cp1251').rjust(b'\x00', 25)
+        content += struct.pack(
+            '<HHhHHi',
+            self.frames,
+            self.fps,
+            self.next,
+            self.changes,
+            self.keycount,
+            self.action,
+        )
+        for item in self.modifies:
+            content += struct.pack(
+                '<hIh',
+                item.index,
+                item.type,
+                item.parent,
+            )
+        for item in self.keyframes:
+            content += struct.pack(
+                '<h3f4f',
+                item.bone,
+                *item.location,
+                *item.rotation,
+            )
+
+        return content
+
 
 class ManagerAnimation(KeyManager):
     @classmethod
@@ -955,6 +1015,24 @@ class ManagerAnimation(KeyManager):
             item.dict_int[num] = animation
 
         return item, offset
+
+    def pack(self, mode) -> (int, bytes):
+        if mode == 'gam':
+            return self.pack_gam(mode)
+        if mode == 'sam':
+            return self.pack_sam(mode)
+
+    def pack_gam(self, mode) -> (int, bytes):
+        content = b''
+        for item in self:
+            content += item.pack(mode)
+        return 0x0008, content
+
+    def pack_sam(self, mode) -> (int, bytes):
+        content = b''
+        for item in self:
+            content += item.pack(mode)
+        return 0x0004, content
 
 
 class DraftTexture(Type.Struct):
@@ -994,6 +1072,11 @@ class FileTexture(Type.Union):
         content, size = DraftTexture.unpack(buffer)
         item.apply(content)
         return item, size
+
+    def pack(self, mode):
+        content = self.file.encode('cp1251').rjust(b'\x00', 40)
+        content += struct.pack('<II', self.uv, self.type)
+        return content
 
 
 class DraftMaterial(Type.Struct):
@@ -1063,6 +1146,46 @@ class FileMaterial(Type.Union):
 
         return item, offset
 
+    def pack(self, mode):
+        content = b''
+
+        if mode == 'sam':
+            content = self.pack_sam()
+
+        if mode == 'gam':
+            content = self.pack_gam()
+
+        for tex in self.textures:
+            content += texture.pack(mode)
+
+        return content
+
+    def pack_sam(self):
+        content = struct.pack(
+            '<4f4f4f4ffI',
+            *self.diffuse,
+            *self.ambient,
+            *self.specular,
+            *self.emmisive,
+            self.power,
+            self.tex_count
+        )
+        shader = self.shader.encode('cp1251')
+        content += struct.pack('<I', len(shader)) + shader
+        return content
+
+    def pack_gam(self):
+        content = struct.pack(
+            '<4f4f4f4ffI',
+            *self.diffuse,
+            *self.ambient,
+            *self.emmisive,
+            *self.specular,
+            self.power,
+            self.tex_count
+        )
+        content += self.shader.encode('cp1251').rjust(b'\x00', 100)
+        return content
 
 class ModelSkin(KeyManager):
     @classmethod
@@ -1091,6 +1214,12 @@ class ModelSkin(KeyManager):
             item.dict_int[num] = skin
 
         return item, size
+
+    def pack(self, mode):
+        content = b''
+        for item in self:
+            content += item.pack(mode)
+        return content
 
 
 class ManagerMaterial(KeyManager):
@@ -1121,6 +1250,14 @@ class ManagerMaterial(KeyManager):
 
         return item, size
 
+    def pack(self, mode):
+        content = struct.pack('<I', len(self.dict_int))
+        for item in self:
+            content += item.pack(mode)
+        if mode == 'sam':
+            return 0x0008, content
+        if mode == 'gam':
+            return 0x000F, content
 
 class ModelCollision:
     count_vertexes: float = 0
@@ -1173,6 +1310,19 @@ class ModelCollision:
 
         return item, offset
 
+    def pack(self, mode) -> (int, bytes):
+        content = struct.pack(
+            '<II', self.count_vertexes, self.count_indices
+        )
+        icount = len(self.vertexes) * 3
+        content += struct.pack(f'<{icount}f', *sum(self.vertexes, []))
+        content += struct.pack(f'<{icount}h', *sum(self.indices, []))
+
+        if mode == 'gam':
+            return 0x0010, content
+        if mode == 'sam':
+            return 0x0005, content
+
 
 class ModelSimpleCollider(Type.Struct):
     type: Type.UInt32()
@@ -1218,6 +1368,31 @@ class FileSimpleCollider(Type.Union):
         item.apply(content)
         return item, size
 
+    def pack(self, info: FileMeta):
+        if info.config == 'hta':
+            return self.pack_hta()
+        if info.config == '113':
+            return self.pack_113()
+
+    def pack_hta(self) -> bytes:
+        return struct.pack(
+            '<I3f4f3f',
+            self.type,
+            *self.location,
+            *self.rotation,
+            *self.size,
+        )
+
+    def pack_113(self) -> bytes:
+        return struct.pack(
+            '<I3f4f3fI',
+            self.type,
+            *self.location,
+            *self.rotation,
+            *self.size,
+            self.gametype,
+        )
+
 
 class ManagerSimpleCollider(KeyManager):
     @classmethod
@@ -1229,6 +1404,15 @@ class ManagerSimpleCollider(KeyManager):
             item.dict_int[num] = collider
             item.dict_str[collider.name] = collider
         return item, size
+
+    def pack(self, mode):
+        content = struct.pack('<I', len(self.dict_int))
+        for item in self:
+            content += item.pack(mode)
+        if mode == 'gam':
+            return 0x0020, content
+        if mode == 'sam':
+            return 0x0007, content
 
 
 class ModelHierGeom(ModelSimpleCollider):
@@ -1267,6 +1451,33 @@ class FileHierGeom(Type.Union):
         item.apply(content)
         return item, size
 
+    def pack(self, info: FileMeta):
+        if info.config == 'hta':
+            return self.pack_hta()
+        if info.config == '113':
+            return self.pack_113()
+
+    def pack_hta(self) -> bytes:
+        return struct.pack(
+            '<I3f4f3fI',
+            self.type,
+            *self.location,
+            *self.rotation,
+            *self.size,
+            self.bone,
+        )
+
+    def pack_113(self) -> bytes:
+        return struct.pack(
+            '<I3f4f3fII',
+            self.type,
+            *self.location,
+            *self.rotation,
+            *self.size,
+            self.gametype,
+            self.bone,
+        )
+
 
 class ManagerHierGeom(KeyManager):
     @classmethod
@@ -1276,6 +1487,15 @@ class ManagerHierGeom(KeyManager):
         for num, collider in enumerate(content):
             item.dict_int[num] = collider
         return item, size
+
+    def pack(self, mode):
+        content = struct.pack('<I', len(self.dict_int))
+        for item in self:
+            content += item.pack(mode)
+        if mode == 'gam':
+            return 0x0040, content
+        if mode == 'sam':
+            return 0x000A, content
 
 
 class FileBoneBounds(Type.Struct):
@@ -1293,6 +1513,18 @@ class ManagerBoneBounds(KeyManager):
             item.dict_int[num] = bound
         return item, size
 
+    def pack(self, mode):
+        content = struct.pack('<I', self.count)
+
+        for item in self:
+            content += struct.pack('<I3f3F', item.bone, *item.min, *item.max)
+
+        if mode == 'sam':
+            return 0x000B, content
+
+        if mode == 'gam':
+            return 0x0080, content
+
 
 class ModelGroup(Type.Struct):
     name: Type.CString(20)
@@ -1300,6 +1532,7 @@ class ModelGroup(Type.Struct):
     max: Type.UInt32()
     nodes: Type.TypeVector(Type.UInt32())
     variants: Type.TypeVector(Type.TypeVector(Type.UInt32()))
+
 
 class DraftGroup(Type.Struct):
     name: Type.CString(20)
@@ -1327,6 +1560,20 @@ class FileGroup(Type.Union):
             item.apply(content)
         return item, size
 
+    def pack(self, mode) -> bytes:
+        content = self.name.encode('cp1251').rjust(b'\x00', 20)
+        content += struct.pack('<II', self.min, self.max)
+
+        if mode == 'gam':
+            content += struct.pack(f'<I{len(self.nodes)}I', len(self.nodes), *self.nodes)
+            content += struct.pack(f'<I{len(self.nodes)}I', len(self.nodes), *self.nodes)
+
+        content += struct.pack(f'<I', len(self.variants))
+        for var in self.variants:
+            content += struct.pack(f'<I{len(var)}I', len(var), *var)
+
+        return content
+
 
 class ManagerGroup(KeyManager):
     @classmethod
@@ -1337,6 +1584,15 @@ class ManagerGroup(KeyManager):
             item.dict_str[group.name] = group
             item.dict_int[num] = group
         return item, size
+
+    def pack(self, mode):
+        content = b''
+        for item in self:
+            content += item.pack(mode)
+        if mode == 'gam':
+            return 0x00F0, content
+        if mode == 'sam':
+            return 0x0009, content
 
 
 class Parser:
