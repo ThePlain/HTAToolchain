@@ -407,7 +407,7 @@ class FileMeta(Type.Union):
 
 
 class DraftBone(Type.Struct):
-    name: Type.CString(40)
+    name: Type.CharArray(40)
     parent: Type.Int16()
     location: Type.Float(3)
     rotation: Type.Float(4)
@@ -415,7 +415,7 @@ class DraftBone(Type.Struct):
 
 
 class ModelBone(Type.Struct):
-    name: Type.CString(40)
+    name: Type.CharArray(40)
     parent: Type.Int32()
     location: Type.Float(3)
     rotation: Type.Float(4)
@@ -439,9 +439,9 @@ class ManagerBone(KeyManager):
         item = cls()
 
         if mode == 'gam':
-            content, offset = Type.FixedStructVector(info.count_node, ModelBone)(buffer)
+            content, offset = Type.StructArray(info.count_node, ModelBone)(buffer)
         if mode == 'sam':
-            content, offset = Type.FixedStructVector(info.count_node, DraftBone)(buffer)
+            content, offset = Type.StructArray(info.count_node, DraftBone)(buffer)
 
         if not content:
             return item, 0
@@ -515,7 +515,7 @@ class DraftInfluence:
         item.count_bone, size = Type.UInt32()(buffer)
         offset += size
 
-        item.influences, size = Type.FixedStructVector(item.count_bone, DraftInfluenceItem)(buffer[offset:])
+        item.influences, size = Type.StructArray(item.count_bone, DraftInfluenceItem)(buffer[offset:])
         offset += size
 
         return item, offset
@@ -523,7 +523,7 @@ class DraftInfluence:
 
 class ModelInfluence(Type.Struct):
     count_bone: Type.UInt16()
-    influences: Type.FixedStructVector(4, ModelInfluenceItem)
+    influences: Type.StructArray(4, ModelInfluenceItem)
 
 
 class FileInfluence(Type.Union):
@@ -587,7 +587,7 @@ class DraftMesh(Type.Struct):
 
 
 class ModelMesh(Type.Struct):
-    name: Type.CString(40)
+    name: Type.CharArray(40)
     type: Type.Int32()
     parent: Type.Int32()
     group: Type.Int32()
@@ -634,21 +634,21 @@ class FileMesh(Type.Union):
 
         item.struct_vertexes = VertexType.map[item.type_vertexes]
 
-        content, size = Type.FixedStructVector(item.count_vertexes, item.struct_vertexes)(buffer[offset:])
+        content, size = Type.StructArray(item.count_vertexes, item.struct_vertexes)(buffer[offset:])
         item.vertexes = content
         offset += size
 
         if item.type == 1:
-            content, size = Type.FixedStructVector(item.count_vertexes, item.struct_vertexes)(buffer[offset:])
+            content, size = Type.StructArray(item.count_vertexes, item.struct_vertexes)(buffer[offset:])
             item.vertexes = content
             offset += size
 
         if item.type == 2:
-            content, size = Type.FixedStructVector(item.count_vertexes, ModelInfluence)(buffer[offset:], mode)
+            content, size = Type.StructArray(item.count_vertexes, ModelInfluence)(buffer[offset:], mode)
             item.influences = content
             offset += size
 
-        item.indices, size = Type.FixedTypeVector(item.count_indices, Type.UInt16(3))(buffer[offset:])
+        item.indices, size = Type.TypeArray(item.count_indices, Type.UInt16(3))(buffer[offset:])
         offset += size
 
         return item, offset
@@ -674,57 +674,57 @@ class FileMesh(Type.Union):
 
         for vtype, _ in item.vertex_headers:
             if vtype == 0:
-                content, size = Type.FixedTypeVector(item.count_vertexes, item.struct_vertexes.type('position'))(buffer[offset:])
+                content, size = Type.TypeArray(item.count_vertexes, item.struct_vertexes.type('position'))(buffer[offset:])
                 for vid in range(item.count_vertexes):
                     item.vertexes[vid].position = content[vid]
                 offset += size
 
             if vtype == 1:
-                content, size = Type.FixedTypeVector(item.count_vertexes, item.struct_vertexes.type('normal'))(buffer[offset:])
+                content, size = Type.TypeArray(item.count_vertexes, item.struct_vertexes.type('normal'))(buffer[offset:])
                 for vid in range(item.count_vertexes):
                     item.vertexes[vid].normal = content[vid]
                 offset += size
 
             if vtype == 2:
-                content, size = Type.FixedTypeVector(item.count_vertexes, item.struct_vertexes.type('color'))(buffer[offset:])
+                content, size = Type.TypeArray(item.count_vertexes, item.struct_vertexes.type('color'))(buffer[offset:])
                 for vid in range(item.count_vertexes):
                     item.vertexes[vid].color = content[vid]
                 offset += size
 
             if vtype == 3:
-                content, size = Type.FixedTypeVector(item.count_vertexes, item.struct_vertexes.type('uv0'))(buffer[offset:])
+                content, size = Type.TypeArray(item.count_vertexes, item.struct_vertexes.type('uv0'))(buffer[offset:])
                 for vid in range(item.count_vertexes):
                     item.vertexes[vid].uv0 = content[vid]
                 offset += size
 
             if vtype == 4:
-                content, size = Type.FixedTypeVector(item.count_vertexes, item.struct_vertexes.type('uv1'))(buffer[offset:])
+                content, size = Type.TypeArray(item.count_vertexes, item.struct_vertexes.type('uv1'))(buffer[offset:])
                 for vid in range(item.count_vertexes):
                     item.vertexes[vid].uv1 = content[vid]
                 offset += size
 
             if vtype == 5:
-                content, size = Type.FixedTypeVector(item.count_vertexes, item.struct_vertexes.type('uv2'))(buffer[offset:])
+                content, size = Type.TypeArray(item.count_vertexes, item.struct_vertexes.type('uv2'))(buffer[offset:])
                 for vid in range(item.count_vertexes):
                     item.vertexes[vid].uv2 = content[vid]
                 offset += size
 
             if vtype == 0x14:
-                content, size = Type.FixedTypeVector(item.count_vertexes, item.struct_vertexes.type('tangent'))(buffer[offset:])
+                content, size = Type.TypeArray(item.count_vertexes, item.struct_vertexes.type('tangent'))(buffer[offset:])
                 for vid in range(item.count_vertexes):
                     item.vertexes[vid].tangent = content[vid]
                 offset += size
 
-#        content, size = Type.FixedStructVector(item.count_vertexes, item.struct_vertexes)(buffer[offset:])
+#        content, size = Type.StructArray(item.count_vertexes, item.struct_vertexes)(buffer[offset:])
 #        item.vertexes = content
 #        offset += size
 
         if self.animation:
-            content, size = Type.FixedStructVector(item.count_vertexes, DraftInfluence)(buffer[offset:])
+            content, size = Type.StructArray(item.count_vertexes, DraftInfluence)(buffer[offset:])
             item.influences = content
             offset += size
 
-        content, size = Type.FixedTypeVector(item.count_indices, Type.UInt16(3))(buffer[offset:])
+        content, size = Type.TypeArray(item.count_indices, Type.UInt16(3))(buffer[offset:])
         item.indices = content
         offset += size
 
@@ -811,7 +811,7 @@ class ManagerMesh(KeyManager):
     @classmethod
     def unpack(cls, buffer, mode, info: FileMeta):
         item = cls()
-        content, size = Type.FixedStructVector(info.count_mesh, FileMesh)(buffer, mode)
+        content, size = Type.StructArray(info.count_mesh, FileMesh)(buffer, mode)
 
         for num, mesh in enumerate(content):
             item.dict_int[num] = mesh
@@ -819,7 +819,7 @@ class ManagerMesh(KeyManager):
 
         return item, size
 
-    def pack(self, mode):
+    def pack(self, mode) -> bytes:
         content = b''
 
         for item in self:
@@ -857,7 +857,7 @@ class ModelKey(Type.Struct):
 
 
 class DraftAnimation(Type.Struct):
-    name: Type.CString(25)
+    name: Type.CharArray(25)
     frames: Type.UInt32()
     fps: Type.UInt32()
     next: Type.Int32()
@@ -865,7 +865,7 @@ class DraftAnimation(Type.Struct):
 
 
 class ModelAnimation(Type.Struct):
-    name: Type.CString(25)
+    name: Type.CharArray(25)
     frames: Type.UInt16()
     fps: Type.UInt16()
     next: Type.Int16()
@@ -902,13 +902,13 @@ class FileAnimation(Type.Union):
         item.apply(content)
         offset += size
 
-        content, size = Type.FixedStructVector(item.changes, ModelChange)(buffer[offset:])
+        content, size = Type.StructArray(item.changes, ModelChange)(buffer[offset:])
         item.modifies = content
         offset += size
 
-        content, size = Type.FixedTypeVector(
+        content, size = Type.TypeArray(
             item.frames,
-            Type.FixedStructVector(item.keycount, ModelKey),
+            Type.StructArray(item.keycount, ModelKey),
         )(buffer[offset:])
         item.keyframes = content
         offset += size
@@ -924,13 +924,13 @@ class FileAnimation(Type.Union):
         item.apply(content)
         offset += size
 
-        content, size = Type.FixedStructVector(item.changes, DraftChange)(buffer[offset:])
+        content, size = Type.StructArray(item.changes, DraftChange)(buffer[offset:])
         item.changes = content
         offset += size
 
-        content, size = Type.FixedTypeVector(
+        content, size = Type.TypeArray(
             item.frames,
-            Type.FixedStructVector(info.count_node, DraftKey),
+            Type.StructArray(info.count_node, DraftKey),
         )(buffer[offset:])
         item.keyframes = content
         offset += size
@@ -1005,7 +1005,7 @@ class ManagerAnimation(KeyManager):
         offset = 0
         item = cls()
 
-        content, offset = Type.FixedStructVector(info.count_animation, FileAnimation)(buffer, mode, info)
+        content, offset = Type.StructArray(info.count_animation, FileAnimation)(buffer, mode, info)
 
         if not content:
             return item, 0
@@ -1036,13 +1036,13 @@ class ManagerAnimation(KeyManager):
 
 
 class DraftTexture(Type.Struct):
-    file: Type.CString(40)
+    file: Type.CharArray(40)
     uv: Type.UInt32()
     type: Type.UInt32()
 
 
 class ModelTexture(Type.Struct):
-    file: Type.CString(40)
+    file: Type.CharArray(40)
     uv: Type.UInt32()
     type: Type.UInt32()
 
@@ -1073,7 +1073,7 @@ class FileTexture(Type.Union):
         item.apply(content)
         return item, size
 
-    def pack(self, mode):
+    def pack(self, mode) -> bytes:
         content = self.file.encode('cp1251').rjust(b'\x00', 40)
         content += struct.pack('<II', self.uv, self.type)
         return content
@@ -1086,7 +1086,7 @@ class DraftMaterial(Type.Struct):
     emmisive: Type.Float(4)
     power: Type.Float()
     tex_count: Type.UInt32()
-    shader: Type.PString()
+    shader: Type.CharVector()
 
 
 class ModelMaterial(Type.Struct):
@@ -1096,7 +1096,7 @@ class ModelMaterial(Type.Struct):
     specular: Type.Float(4)
     power: Type.Float()
     tex_count: Type.UInt32()
-    shader: Type.CString(100)
+    shader: Type.CharArray(100)
 
 
 class FileMaterial(Type.Union):
@@ -1127,7 +1127,7 @@ class FileMaterial(Type.Union):
         item.apply(content)
         offset += size
 
-        item.textures, size = Type.FixedStructVector(item.tex_count, ModelTexture)(buffer[offset:], mode)
+        item.textures, size = Type.StructArray(item.tex_count, ModelTexture)(buffer[offset:], mode)
         offset += size
 
         return item, offset
@@ -1141,12 +1141,12 @@ class FileMaterial(Type.Union):
         item.apply(content)
         offset += size
 
-        item.textures, size = Type.FixedStructVector(item.tex_count, DraftTexture)(buffer[offset:], mode)
+        item.textures, size = Type.StructArray(item.tex_count, DraftTexture)(buffer[offset:], mode)
         offset += size
 
         return item, offset
 
-    def pack(self, mode):
+    def pack(self, mode) -> bytes:
         content = b''
 
         if mode == 'sam':
@@ -1199,7 +1199,7 @@ class ModelSkin(KeyManager):
     def unpack_gam(cls, buffer, mode, info: FileMeta):
         item = cls()
 
-        content, size = Type.FixedStructVector(info.count_material, FileMaterial)(buffer, mode)
+        content, size = Type.StructArray(info.count_material, FileMaterial)(buffer, mode)
         for num, skin in enumerate(content):
             item.dict_int[num] = skin
 
@@ -1209,13 +1209,13 @@ class ModelSkin(KeyManager):
     def unpack_sam(cls, buffer, mode, info: FileMeta):
         item = cls()
 
-        content, size = Type.FixedStructVector(info.count_material, FileMaterial)(buffer, mode)
+        content, size = Type.StructArray(info.count_material, FileMaterial)(buffer, mode)
         for num, skin in enumerate(content):
             item.dict_int[num] = skin
 
         return item, size
 
-    def pack(self, mode):
+    def pack(self, mode) -> (bytes):
         content = b''
         for item in self:
             content += item.pack(mode)
@@ -1250,7 +1250,7 @@ class ManagerMaterial(KeyManager):
 
         return item, size
 
-    def pack(self, mode):
+    def pack(self, mode) -> (int, bytes):
         content = struct.pack('<I', len(self.dict_int))
         for item in self:
             content += item.pack(mode)
@@ -1283,10 +1283,10 @@ class ModelCollision:
         item.count_indices, size = Type.UInt32()(buffer[offset:])
         offset += size
 
-        item.vertexes, size = Type.FixedTypeVector(item.count_vertexes, Type.Float(3))(buffer[offset:])
+        item.vertexes, size = Type.TypeArray(item.count_vertexes, Type.Float(3))(buffer[offset:])
         offset += size
 
-        item.indices, size = Type.FixedTypeVector(item.count_indices, Type.UInt16(3))(buffer[offset:])
+        item.indices, size = Type.TypeArray(item.count_indices, Type.UInt16(3))(buffer[offset:])
         offset += size
 
         return item, offset
@@ -1302,10 +1302,10 @@ class ModelCollision:
         item.count_indices, size = Type.UInt32()(buffer[offset:])
         offset += size
 
-        item.vertexes, size = Type.FixedTypeVector(item.count_vertexes, Type.Float(3))(buffer[offset:])
+        item.vertexes, size = Type.TypeArray(item.count_vertexes, Type.Float(3))(buffer[offset:])
         offset += size
 
-        item.indices, size = Type.FixedTypeVector(item.count_indices, Type.UInt16(3))(buffer[offset:])
+        item.indices, size = Type.TypeArray(item.count_indices, Type.UInt16(3))(buffer[offset:])
         offset += size
 
         return item, offset
@@ -1368,7 +1368,7 @@ class FileSimpleCollider(Type.Union):
         item.apply(content)
         return item, size
 
-    def pack(self, info: FileMeta):
+    def pack(self, info: FileMeta) -> bytes:
         if info.config == 'hta':
             return self.pack_hta()
         if info.config == '113':
@@ -1405,7 +1405,7 @@ class ManagerSimpleCollider(KeyManager):
             item.dict_str[collider.name] = collider
         return item, size
 
-    def pack(self, mode):
+    def pack(self, mode) -> (int, bytes):
         content = struct.pack('<I', len(self.dict_int))
         for item in self:
             content += item.pack(mode)
@@ -1451,7 +1451,7 @@ class FileHierGeom(Type.Union):
         item.apply(content)
         return item, size
 
-    def pack(self, info: FileMeta):
+    def pack(self, info: FileMeta) -> bytes:
         if info.config == 'hta':
             return self.pack_hta()
         if info.config == '113':
@@ -1488,7 +1488,7 @@ class ManagerHierGeom(KeyManager):
             item.dict_int[num] = collider
         return item, size
 
-    def pack(self, mode):
+    def pack(self, mode) -> (int, bytes):
         content = struct.pack('<I', len(self.dict_int))
         for item in self:
             content += item.pack(mode)
@@ -1513,7 +1513,7 @@ class ManagerBoneBounds(KeyManager):
             item.dict_int[num] = bound
         return item, size
 
-    def pack(self, mode):
+    def pack(self, mode) -> (int, bytes):
         content = struct.pack('<I', self.count)
 
         for item in self:
@@ -1527,7 +1527,7 @@ class ManagerBoneBounds(KeyManager):
 
 
 class ModelGroup(Type.Struct):
-    name: Type.CString(20)
+    name: Type.CharArray(20)
     min: Type.UInt32()
     max: Type.UInt32()
     nodes: Type.TypeVector(Type.UInt32())
@@ -1535,7 +1535,7 @@ class ModelGroup(Type.Struct):
 
 
 class DraftGroup(Type.Struct):
-    name: Type.CString(20)
+    name: Type.CharArray(20)
     min: Type.UInt32()
     max: Type.UInt32()
     variants: Type.TypeVector(Type.UInt32())
@@ -1585,7 +1585,7 @@ class ManagerGroup(KeyManager):
             item.dict_int[num] = group
         return item, size
 
-    def pack(self, mode):
+    def pack(self, mode) -> (int, bytes):
         content = b''
         for item in self:
             content += item.pack(mode)
