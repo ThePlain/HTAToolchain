@@ -97,10 +97,14 @@ class Dynamic(Base):
 
 
 class Byte(Base):
-    __slots__ = ['count']
+    __slots__ = ['count', 'aligment']
 
-    def __init__(self, count=1):
+    def __init__(self, count=1, aligment=True):
+        assert isinstance(count, int)
+        assert isinstance(aligment, bool)
+
         self.count = count
+        self.aligment = aligment
 
     # pylint: disable=unused-argument
     def load(self, buffer: bytes, *args, structure=None, **kwargs) -> Tuple[bytes, int]:
@@ -111,248 +115,473 @@ class Byte(Base):
 
     # pylint: disable=unused-argument
     def dump(self, value, *args, **kwarg) -> bytes:
-        return value[:self.count]
+        if value is None:
+            return b'\x00' * self.count
+
+        if len(value) > self.count:
+            return value[:self.count]
+
+        if self.aligment and len(value) < self.count:
+            value += b'\x00' * (self.count - len(value))
+
+        return value
 
 
 class UInt8(Base):
-    __slots__ = ['count']
+    __slots__ = ['count', 'aligment', 'size']
 
-    def __init__(self, count=1):
+    def __init__(self, count=1, aligment=True):
+        assert isinstance(count, int)
+        assert isinstance(aligment, bool)
+
         self.count = count
+        self.aligment = aligment
+        self.size = count
 
     # pylint: disable=unused-argument
     def load(self, buffer: bytes, *args, structure=None, **kwargs) -> Tuple[Union[int, List[int]], int]:
-        value = struct.unpack(f'<{self.count}B', buffer[:self.count * 1])
+        if len(buffer) < self.count:
+            raise ValueError('presented data smaller that required.')
 
-        if value == 1:
-            return value[0], 1
+        value = struct.unpack(f'<{self.count}B', buffer[:self.count])
+
+        if self.count == 1:
+            return value[0], self.size
 
         else:
-            return value, self.count
+            return list(value), self.size
 
     # pylint: disable=unused-argument
     def dump(self, value, *args, **kwarg) -> bytes:
-        if isinstance(value, int):
-            return struct.pack('<B', value)
+        if value is None:
+            value = []
 
-        if isinstance(value, (list, tuple)) and len(value) == self.count:
+        if not isinstance(value, list):
+            value = [value, ]
+
+        if len(value) < self.count:
+            if self.aligment:
+                value += [0, ] * (self.count - len(value))
+
+            else:
+                raise ValueError('presented data smaller that required')
+
+        if len(value) > self.count:
+            value = value[:self.count]
+
+        try:
             return struct.pack(f'<{self.count}B', *value)
+
+        except struct.error as error:
+            raise ValueError(error)
 
         raise ValueError('passed unsupported value.')
 
 
 class Int8(Base):
-    __slots__ = ['count']
+    __slots__ = ['count', 'aligment', 'size']
 
-    def __init__(self, count=1):
+    def __init__(self, count=1, aligment=True):
+        assert isinstance(count, int)
+        assert isinstance(aligment, bool)
+
         self.count = count
+        self.aligment = aligment
+        self.size = count
 
     # pylint: disable=unused-argument
     def load(self, buffer: bytes, *args, structure=None, **kwargs) -> Tuple[Union[int, List[int]], int]:
-        value = struct.unpack(f'<{self.count}b', buffer[:self.count * 1])
+        if len(buffer) < self.size:
+            raise ValueError('presented data smaller that required.')
 
-        if value == 1:
-            return value[0], 1
+        value = struct.unpack(f'<{self.count}b', buffer[:self.size])
+
+        if self.count == 1:
+            return value[0], self.size
 
         else:
-            return value, self.count
+            return list(value), self.size
 
     # pylint: disable=unused-argument
     def dump(self, value, *args, **kwarg) -> bytes:
-        if isinstance(value, int):
-            return struct.pack('<b', value)
+        if value is None:
+            value = []
 
-        if isinstance(value, (list, tuple)) and len(value) == self.count:
+        if not isinstance(value, list):
+            value = [value, ]
+
+        if len(value) < self.count:
+            if self.aligment:
+                value += [0, ] * (self.count - len(value))
+
+            else:
+                raise ValueError('presented data smaller that required')
+
+        if len(value) > self.count:
+            value = value[:self.count]
+
+        try:
             return struct.pack(f'<{self.count}b', *value)
+
+        except struct.error as error:
+            raise ValueError(error)
 
         raise ValueError('passed unsupported value.')
 
 
 class UInt16(Base):
-    __slots__ = ['count']
+    __slots__ = ['count', 'aligment', 'size']
 
-    def __init__(self, count=1):
+    def __init__(self, count=1, aligment=True):
+        assert isinstance(count, int)
+        assert isinstance(aligment, bool)
+
         self.count = count
+        self.aligment = aligment
+        self.size = count * 2
 
     # pylint: disable=unused-argument
     def load(self, buffer: bytes, *args, structure=None, **kwargs) -> Tuple[Union[int, List[int]], int]:
-        value = struct.unpack(f'<{self.count}H', buffer[:self.count * 2])
+        if len(buffer) < self.size:
+            raise ValueError('presented data smaller that required.')
 
-        if value == 1:
-            return value[0], 2
+        value = struct.unpack(f'<{self.count}H', buffer[:self.size])
+
+        if self.count == 1:
+            return value[0], self.size
 
         else:
-            return value, self.count * 2
+            return list(value), self.size
 
     # pylint: disable=unused-argument
     def dump(self, value, *args, **kwarg) -> bytes:
-        if isinstance(value, int):
-            return struct.pack('<H', value)
+        if value is None:
+            value = []
 
-        if isinstance(value, (list, tuple)) and len(value) == self.count:
+        if not isinstance(value, list):
+            value = [value, ]
+
+        if len(value) < self.count:
+            if self.aligment:
+                value += [0, ] * (self.count - len(value))
+
+            else:
+                raise ValueError('presented data smaller that required')
+
+        if len(value) > self.count:
+            value = value[:self.count]
+
+        try:
             return struct.pack(f'<{self.count}H', *value)
+
+        except struct.error as error:
+            raise ValueError(error)
 
         raise ValueError('passed unsupported value.')
 
 
 class Int16(Base):
-    __slots__ = ['count']
+    __slots__ = ['count', 'aligment', 'size']
 
-    def __init__(self, count=1):
+    def __init__(self, count=1, aligment=True):
+        assert isinstance(count, int)
+        assert isinstance(aligment, bool)
+
         self.count = count
+        self.aligment = aligment
+        self.size = count * 2
 
     # pylint: disable=unused-argument
     def load(self, buffer: bytes, *args, structure=None, **kwargs) -> Tuple[Union[int, List[int]], int]:
-        value = struct.unpack(f'<{self.count}h', buffer[:self.count * 2])
+        if len(buffer) < self.size:
+            raise ValueError('presented data smaller that required.')
 
-        if value == 1:
-            return value[0], 2
+        value = struct.unpack(f'<{self.count}h', buffer[:self.size])
+
+        if self.count == 1:
+            return value[0], self.size
 
         else:
-            return value, self.count * 2
+            return list(value), self.size
 
     # pylint: disable=unused-argument
     def dump(self, value, *args, **kwarg) -> bytes:
-        if isinstance(value, int):
-            return struct.pack('<h', value)
+        if value is None:
+            value = []
 
-        if isinstance(value, (list, tuple)) and len(value) == self.count:
+        if not isinstance(value, list):
+            value = [value, ]
+
+        if len(value) < self.count:
+            if self.aligment:
+                value += [0, ] * (self.count - len(value))
+
+            else:
+                raise ValueError('presented data smaller that required')
+
+        if len(value) > self.count:
+            value = value[:self.count]
+
+        try:
             return struct.pack(f'<{self.count}h', *value)
+
+        except struct.error as error:
+            raise ValueError(error)
 
         raise ValueError('passed unsupported value.')
 
 
 class UInt32(Base):
-    __slots__ = ['count']
+    __slots__ = ['count', 'aligment', 'size']
 
-    def __init__(self, count=1):
+    def __init__(self, count=1, aligment=True):
+        assert isinstance(count, int)
+        assert isinstance(aligment, bool)
+
         self.count = count
+        self.aligment = aligment
+        self.size = count * 4
 
     # pylint: disable=unused-argument
     def load(self, buffer: bytes, *args, structure=None, **kwargs) -> Tuple[Union[int, List[int]], int]:
-        value = struct.unpack(f'<{self.count}I', buffer[:self.count * 4])
+        if len(buffer) < self.size:
+            raise ValueError('presented data smaller that required.')
 
-        if value == 1:
-            return value[0], 4
+        value = struct.unpack(f'<{self.count}I', buffer[:self.size])
+
+        if self.count == 1:
+            return value[0], self.size
 
         else:
-            return value, self.count * 4
+            return list(value), self.size
 
     # pylint: disable=unused-argument
     def dump(self, value, *args, **kwarg) -> bytes:
-        if isinstance(value, int):
-            return struct.pack('<I', value)
+        if value is None:
+            value = []
 
-        if isinstance(value, (list, tuple)) and len(value) == self.count:
+        if not isinstance(value, list):
+            value = [value, ]
+
+        if len(value) < self.count:
+            if self.aligment:
+                value += [0, ] * (self.count - len(value))
+
+            else:
+                raise ValueError('presented data smaller that required')
+
+        if len(value) > self.count:
+            value = value[:self.count]
+
+        try:
             return struct.pack(f'<{self.count}I', *value)
+
+        except struct.error as error:
+            raise ValueError(error)
 
         raise ValueError('passed unsupported value.')
 
 
 class Int32(Base):
-    __slots__ = ['count']
+    __slots__ = ['count', 'aligment', 'size']
 
-    def __init__(self, count=1):
+    def __init__(self, count=1, aligment=True):
+        assert isinstance(count, int)
+        assert isinstance(aligment, bool)
+
         self.count = count
+        self.aligment = aligment
+        self.size = count * 4
 
     # pylint: disable=unused-argument
     def load(self, buffer: bytes, *args, structure=None, **kwargs) -> Tuple[Union[int, List[int]], int]:
-        value = struct.unpack(f'<{self.count}i', buffer[:self.count * 4])
+        if len(buffer) < self.size:
+            raise ValueError('presented data smaller that required.')
 
-        if value == 1:
-            return value[0], 4
+        value = struct.unpack(f'<{self.count}i', buffer[:self.size])
+
+        if self.count == 1:
+            return value[0], self.size
 
         else:
-            return value, self.count * 4
+            return list(value), self.size
 
     # pylint: disable=unused-argument
     def dump(self, value, *args, **kwarg) -> bytes:
-        if isinstance(value, int):
-            return struct.pack('<i', value)
+        if value is None:
+            value = []
 
-        if isinstance(value, (list, tuple)) and len(value) == self.count:
+        if not isinstance(value, list):
+            value = [value, ]
+
+        if len(value) < self.count:
+            if self.aligment:
+                value += [0, ] * (self.count - len(value))
+
+            else:
+                raise ValueError('presented data smaller that required')
+
+        if len(value) > self.count:
+            value = value[:self.count]
+
+        try:
             return struct.pack(f'<{self.count}i', *value)
+
+        except struct.error as error:
+            raise ValueError(error)
 
         raise ValueError('passed unsupported value.')
 
 
 class UInt64(Base):
-    __slots__ = ['count']
+    __slots__ = ['count', 'aligment', 'size']
 
-    def __init__(self, count=1):
+    def __init__(self, count=1, aligment=True):
+        assert isinstance(count, int)
+        assert isinstance(aligment, bool)
+
         self.count = count
+        self.aligment = aligment
+        self.size = count * 8
 
     # pylint: disable=unused-argument
     def load(self, buffer: bytes, *args, structure=None, **kwargs) -> Tuple[Union[int, List[int]], int]:
-        value = struct.unpack(f'<{self.count}Q', buffer[:self.count * 8])
+        if len(buffer) < self.size:
+            raise ValueError('presented data smaller that required.')
 
-        if value == 1:
-            return value[0], 8
+        value = struct.unpack(f'<{self.count}Q', buffer[:self.size])
+
+        if self.count == 1:
+            return value[0], self.size
 
         else:
-            return value, self.count * 8
+            return list(value), self.size
 
     # pylint: disable=unused-argument
     def dump(self, value, *args, **kwarg) -> bytes:
-        if isinstance(value, int):
-            return struct.pack('<Q', value)
+        if value is None:
+            value = []
 
-        if isinstance(value, (list, tuple)) and len(value) == self.count:
+        if not isinstance(value, list):
+            value = [value, ]
+
+        if len(value) < self.count:
+            if self.aligment:
+                value += [0, ] * (self.count - len(value))
+
+            else:
+                raise ValueError('presented data smaller that required')
+
+        if len(value) > self.count:
+            value = value[:self.count]
+
+        try:
             return struct.pack(f'<{self.count}Q', *value)
+
+        except struct.error as error:
+            raise ValueError(error)
 
         raise ValueError('passed unsupported value.')
 
 
 class Int64(Base):
-    __slots__ = ['count']
+    __slots__ = ['count', 'aligment', 'size']
 
-    def __init__(self, count=1):
+    def __init__(self, count=1, aligment=True):
+        assert isinstance(count, int)
+        assert isinstance(aligment, bool)
+
         self.count = count
+        self.aligment = aligment
+        self.size = count * 8
 
     # pylint: disable=unused-argument
     def load(self, buffer: bytes, *args, structure=None, **kwargs) -> Tuple[Union[int, List[int]], int]:
-        value = struct.unpack(f'<{self.count}q', buffer[:self.count * 8])
+        if len(buffer) < self.size:
+            raise ValueError('presented data smaller that required.')
 
-        if value == 1:
-            return value[0], 8
+        value = struct.unpack(f'<{self.count}q', buffer[:self.size])
+
+        if self.count == 1:
+            return value[0], self.size
 
         else:
-            return value, self.count * 8
+            return list(value), self.size
 
     # pylint: disable=unused-argument
     def dump(self, value, *args, **kwarg) -> bytes:
-        if isinstance(value, int):
-            return struct.pack('<q', value)
+        if value is None:
+            value = []
 
-        if isinstance(value, (list, tuple)) and len(value) == self.count:
+        if not isinstance(value, list):
+            value = [value, ]
+
+        if len(value) < self.count:
+            if self.aligment:
+                value += [0, ] * (self.count - len(value))
+
+            else:
+                raise ValueError('presented data smaller that required')
+
+        if len(value) > self.count:
+            value = value[:self.count]
+
+        try:
             return struct.pack(f'<{self.count}q', *value)
+
+        except struct.error as error:
+            raise ValueError(error)
 
         raise ValueError('passed unsupported value.')
 
 
 class Float(Base):
-    __slots__ = ['count']
+    __slots__ = ['count', 'aligment', 'size']
 
-    def __init__(self, count=1):
+    def __init__(self, count=1, aligment=True):
+        assert isinstance(count, int)
+        assert isinstance(aligment, bool)
+
         self.count = count
+        self.aligment = aligment
+        self.size = count * 4
 
     # pylint: disable=unused-argument
-    def load(self, buffer: bytes, *args, structure=None, **kwargs) -> Tuple[Union[float, List[float]], int]:
-        value = struct.unpack(f'<{self.count}f', buffer[:self.count * 4])
+    def load(self, buffer: bytes, *args, structure=None, **kwargs) -> Tuple[Union[int, List[int]], int]:
+        if len(buffer) < self.size:
+            raise ValueError('presented data smaller that required.')
 
-        if value == 1:
-            return value[0], 4
+        value = struct.unpack(f'<{self.count}f', buffer[:self.size])
+
+        if self.count == 1:
+            return value[0], self.size
 
         else:
-            return value, self.count * 4
+            return list(value), self.size
 
     # pylint: disable=unused-argument
     def dump(self, value, *args, **kwarg) -> bytes:
-        if isinstance(value, float):
-            return struct.pack('<f', value)
+        if value is None:
+            value = []
 
-        if isinstance(value, (list, tuple)) and len(value) == self.count:
+        if not isinstance(value, list):
+            value = [value, ]
+
+        if len(value) < self.count:
+            if self.aligment:
+                value += [0, ] * (self.count - len(value))
+
+            else:
+                raise ValueError('presented data smaller that required')
+
+        if len(value) > self.count:
+            value = value[:self.count]
+
+        try:
             return struct.pack(f'<{self.count}f', *value)
+
+        except struct.error as error:
+            raise ValueError(error)
 
         raise ValueError('passed unsupported value.')
 
