@@ -1,6 +1,6 @@
 import os
 import struct
-from TargemType import Type, KeyManager
+from Types import Type, KeyManager
 
 
 class VertexType:

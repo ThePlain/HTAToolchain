@@ -65,6 +65,7 @@ class Test_Byte(unittest.TestCase):
         _type = htatype.Byte(8)
         _res_value = _type.dump(_tst_value)
         self.assertEqual(_res_value, b'\xDE\xAD\xBE\xEF\x00\x00\x00\x00')
+        self.assertEqual(len(_res_value), 8)
 
         _tst_value = None
         _type = htatype.Byte(4)
