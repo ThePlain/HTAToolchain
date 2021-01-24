@@ -1,5 +1,4 @@
 import unittest
-from struct import pack, unpack
 
 # pylint: disable=import-error
 import htatype
