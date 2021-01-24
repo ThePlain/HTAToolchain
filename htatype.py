@@ -49,16 +49,28 @@ class Base:
 
 
 class Structure(Base):
+    def __init__(self, count=1):
+        if not hasattr(self, '__annotations__'):
+            raise TypeError('bad structure declaration.')
+
+        self.__count__ = count
+
     # pylint: disable=unused-argument
-    @classmethod
-    def load(cls, buffer: bytes, *args, structure=None, **kwargs) -> Tuple[Any, int]:
+    def load(self, buffer: bytes, *args, structure=None, **kwargs) -> Tuple[Any, int]:
+        results = []
         padding = 0
-        results = cls()
-        # pylint: disable=no-member
-        for key, type in cls.__annotations__.items():
-            value, size = type.load(buffer[padding:], *args, structure=results, **kwargs)
-            setattr(results, key, value)
-            padding += size
+        for _ in range(self.__count__):
+            instance = self.__class__()
+            # pylint: disable=no-member
+            for key, type in self.__annotations__.items():
+                value, size = type.load(buffer[padding:], *args, structure=instance, **kwargs)
+                setattr(instance, key, value)
+                padding += size
+            results.append(instance)
+
+        if self.__count__ == 1:
+            return results[0], padding
+
         return results, padding
 
     # pylint: disable=unused-argument
@@ -76,7 +88,7 @@ class Structure(Base):
         # pylint: disable=no-member
         for type in self.__annotations__.values():
             results += type.size
-        return results
+        return results * self.__count__
 
 
 class Dynamic(Base):
@@ -665,7 +677,7 @@ class Vector(Base):
 class Array(Base):
     __slots__ = ['count', 'structure', 'count_ptr', 'aligment', 'size']
 
-    def __init__(self, structure, count: int = 1, aligment=True, count_ptr=None):
+    def __init__(self, structure, count: int = 0, aligment=True, count_ptr=None):
         assert isinstance(count, int)
         assert isinstance(aligment, bool)
         assert not count_ptr or isinstance(count_ptr, str)
