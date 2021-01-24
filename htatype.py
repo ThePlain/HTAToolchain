@@ -42,32 +42,40 @@ class KeyManager:
 
 
 class Base:
+    size = 0
+
     def load(self, buffer: bytes, *args, structure=None, **kwargs) -> Tuple[Any, int]:
         raise NotImplementedError
 
 
 class Structure(Base):
     # pylint: disable=unused-argument
-    def load(self, buffer: bytes, *args, structure=None, **kwargs) -> Tuple[Any, int]:
+    @classmethod
+    def load(cls, buffer: bytes, *args, structure=None, **kwargs) -> Tuple[Any, int]:
         padding = 0
-        results = self.__class__()
+        results = cls()
         # pylint: disable=no-member
-        for key, type in self.__annotations__.items():
-            value, size = type.load(buffer[padding:], *args, structure=self, **kwargs)
+        for key, type in cls.__annotations__.items():
+            value, size = type.load(buffer[padding:], *args, structure=results, **kwargs)
             setattr(results, key, value)
             padding += size
         return results, padding
 
     # pylint: disable=unused-argument
-    def dump(self, *args, value=None, **kwarg) -> bytes:
-        if not value:
-            value = self
-
+    def dump(self, *args, **kwarg) -> bytes:
         results = b''
         # pylint: disable=no-member
         for key, type in self.__annotations__.items():
             value = getattr(value, key)
             results += type.dump(value)
+        return results
+
+    @property
+    def size(self):
+        results = 0
+        # pylint: disable=no-member
+        for type in self.__annotations__.values():
+            results += type.size
         return results
 
 
@@ -643,7 +651,7 @@ class Vector(Base):
             results.append(value)
             padding += size
 
-        return results
+        return results, padding
 
     def dump(self, values: list) -> bytes:
         results = struct.pack('<I', len(values))
@@ -655,12 +663,18 @@ class Vector(Base):
 
 
 class Array(Base):
-    __slots__ = ['count', 'structure', 'count_ptr']
+    __slots__ = ['count', 'structure', 'count_ptr', 'aligment', 'size']
 
-    def __init__(self, structure, count: int = 1, count_ptr=None):
+    def __init__(self, structure, count: int = 1, aligment=True, count_ptr=None):
+        assert isinstance(count, int)
+        assert isinstance(aligment, bool)
+        assert not count_ptr or isinstance(count_ptr, str)
+
         self.count = count
         self.structure = structure
         self.count_ptr = count_ptr
+        self.aligment = aligment
+        self.size = self.count * self.structure.size
 
     def load(self, buffer: bytes, *args, structure=None, **kwargs) -> Tuple[List[Any], int]:
         results = list()
@@ -668,16 +682,13 @@ class Array(Base):
 
         count = self.count
         if self.count_ptr:
-            if not structure:
-                raise ValueError('can\'t use dynamic attribute because structure not passed.')
-
-            if not hasattr(structure, self.count_ptr):
+            if not structure or not hasattr(structure, self.count_ptr):
                 raise AttributeError(f'unable to get "{self.count_ptr}" attribute from struct.')
 
             count = getattr(structure, self.count_ptr)
 
         for _ in range(count):
-            value, size = self.structure.load(buffer[padding:], structure=structure, *args, **kwargs)
+            value, size = self.structure.load(buffer[padding:], *args, structure=structure, **kwargs)
             results.append(value)
             padding += size
 
@@ -689,4 +700,8 @@ class Array(Base):
         for item in values[:self.count]:
             results += self.structure.dump(item)
 
+        if self.aligment:
+            results = results.rjust(self.size, b'\x00')
+
         return results
+
