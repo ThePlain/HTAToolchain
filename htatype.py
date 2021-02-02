@@ -3,42 +3,51 @@ from typing import Any, List, Union, Tuple
 
 
 class KeyManager:
-    __slots__ = ['dict', 'provider', 'name_ptr']
+    _container_ = (None, None)
+    _container_ptr_ = None
 
-    def __init__(self, provider, name_ptr=None):
-        self.dict = dict()
-        self.name_ptr = name_ptr
-        self.provider = provider
+    def load(self, buffer: bytes, *args, structure=None, **kwargs) -> Tuple[Any, int]:
+        items, size = super().load(self, buffer, *args, structure, **kwargs)
+        raise NotImplementedError
 
-    def __len__(self):
-        return len(self.dict)
-
-    def __iter__(self):
-        return iter(self.dict)
+    def dump(self, *args, value=None, mode=None, **kwargs) -> bytes:
+        result = super().dump(self, *args, value=None, mode=None, **kwargs)
+        raise NotImplementedError
 
     def __getitem__(self, key):
-        if isinstance(key, str):
-            return self.dict[key]
-        if isinstance(key, int):
-            key = list(self.dict)[key]
-            return self.dict[key]
-        raise TypeError('unsupported key type.')
+        assert self._container_ptr_
+        return self._container_ptr_[key]
 
-    def __setitem__(self, key, item):
-        self.dict[key] = item
+    def __setitem__(self, key, value):
+        assert self._container_ptr_
+        self._container_ptr_[key] = value
 
-    def __delitem__(self, key):
-        del self.dict[key]
+    def __iter__(self):
+        assert self._container_ptr_
+        if isinstance(self._container_ptr_, dict):
+            return iter(self._container_ptr_.values())
+        return iter(self._container_ptr_)
 
-    def new(self, name):
-        assert self.provider
-        self.dict[name] = self.provider()
+    def __len__(self):
+        assert self._container_ptr_
+        return len(self._container_ptr_)
 
-    def load(self, buffer: bytes, *args, **kwargs):
-        raise NotImplementedError
+    def new(self, name=None):
+        pointer, attr = self._container_
+        if attr and not name:
+            raise AttributeError('name attribute pointer not present.')
 
-    def dump(self) -> Tuple[bytes, int]:
-        raise NotImplementedError
+        instance = self.__class__()
+
+        if name:
+            setattr(instance, attr, name)
+            self._container_ptr_[name] = instance
+            getattr(self, pointer, instance)
+
+        else:
+            self._container_ptr_.append(instance)
+
+        return instance
 
 
 class Base:
@@ -57,13 +66,15 @@ class Structure(Base):
 
     # pylint: disable=unused-argument
     def load(self, buffer: bytes, *args, structure=None, **kwargs) -> Tuple[Any, int]:
+        self.__pre_init__(structure=structure, **kwargs)
+
         results = []
         padding = 0
         for _ in range(self.__count__):
             instance = self.__class__()
             # pylint: disable=no-member
             for key, type in self.__annotations__.items():
-                value, size = type.load(buffer[padding:], *args, structure=instance, **kwargs)
+                value, size = self.filter(key, type, buffer[padding:], *args, structure=instance, **kwargs)
                 setattr(instance, key, value)
                 padding += size
             results.append(instance)
@@ -90,35 +101,41 @@ class Structure(Base):
             results += type.size
         return results * self.__count__
 
+    def filter(self, name, type, buffer: bytes, *args, structure=None, **kwargs):
+        return type.load(buffer, *args, structure=structure, **kwargs)
+
+    def __pre_init__(self, **kwargs):
+        pass
+
 
 class Dynamic(Base):
+    _modes_ = dict()
+
     def __init__(self, **types):
-        self.__types = types
+        self._modes_.update(types)
 
     # pylint: disable=unused-argument
-    def load(self, buffer: bytes, *args, structure=None, type=None, **kwargs) -> Tuple[Any, int]:
-        provider = self.__types[type]
+    def load(self, buffer: bytes, *args, structure=None, mode=None, **kwargs) -> Tuple[Any, int]:
+        provider = self._modes_[mode]
         results = self.__class__()
-        for key, type in provider.__annotations__.items():
-            value, size = type.load(buffer[padding:], *args, structure=self, **kwargs)
+        for key, mode in provider.__annotations__.items():
+            value, size = mode.load(buffer[padding:], *args, structure=self, **kwargs)
             setattr(results, key, value)
             padding += size
         return results, padding
 
     # pylint: disable=unused-argument
-    def dump(self, *args, value=None, type=None, **kwargs) -> bytes:
+    def dump(self, *args, value=None, mode=None, **kwargs) -> bytes:
         if not value:
             value = self
 
-        provider = self.__types[type]
+        provider = self._modes_[mode]
         results = provider.dump(value)
 
         return results
 
 
 class Byte(Base):
-    __slots__ = ['count', 'aligment']
-
     def __init__(self, count=1, aligment=True):
         assert isinstance(count, int)
         assert isinstance(aligment, bool)
@@ -148,8 +165,6 @@ class Byte(Base):
 
 
 class UInt8(Base):
-    __slots__ = ['count', 'aligment', 'size']
-
     def __init__(self, count=1, aligment=True):
         assert isinstance(count, int)
         assert isinstance(aligment, bool)
@@ -199,8 +214,6 @@ class UInt8(Base):
 
 
 class Int8(Base):
-    __slots__ = ['count', 'aligment', 'size']
-
     def __init__(self, count=1, aligment=True):
         assert isinstance(count, int)
         assert isinstance(aligment, bool)
@@ -250,8 +263,6 @@ class Int8(Base):
 
 
 class UInt16(Base):
-    __slots__ = ['count', 'aligment', 'size']
-
     def __init__(self, count=1, aligment=True):
         assert isinstance(count, int)
         assert isinstance(aligment, bool)
@@ -301,8 +312,6 @@ class UInt16(Base):
 
 
 class Int16(Base):
-    __slots__ = ['count', 'aligment', 'size']
-
     def __init__(self, count=1, aligment=True):
         assert isinstance(count, int)
         assert isinstance(aligment, bool)
@@ -352,8 +361,6 @@ class Int16(Base):
 
 
 class UInt32(Base):
-    __slots__ = ['count', 'aligment', 'size']
-
     def __init__(self, count=1, aligment=True):
         assert isinstance(count, int)
         assert isinstance(aligment, bool)
@@ -403,8 +410,6 @@ class UInt32(Base):
 
 
 class Int32(Base):
-    __slots__ = ['count', 'aligment', 'size']
-
     def __init__(self, count=1, aligment=True):
         assert isinstance(count, int)
         assert isinstance(aligment, bool)
@@ -454,8 +459,6 @@ class Int32(Base):
 
 
 class UInt64(Base):
-    __slots__ = ['count', 'aligment', 'size']
-
     def __init__(self, count=1, aligment=True):
         assert isinstance(count, int)
         assert isinstance(aligment, bool)
@@ -505,8 +508,6 @@ class UInt64(Base):
 
 
 class Int64(Base):
-    __slots__ = ['count', 'aligment', 'size']
-
     def __init__(self, count=1, aligment=True):
         assert isinstance(count, int)
         assert isinstance(aligment, bool)
@@ -556,8 +557,6 @@ class Int64(Base):
 
 
 class Float(Base):
-    __slots__ = ['count', 'aligment', 'size']
-
     def __init__(self, count=1, aligment=True):
         assert isinstance(count, int)
         assert isinstance(aligment, bool)
@@ -607,8 +606,6 @@ class Float(Base):
 
 
 class CharArray(Base):
-    __slots__ = ['count']
-
     def __init__(self, count=1):
         self.count = count
 
@@ -630,8 +627,6 @@ class CharArray(Base):
 
 
 class CharVector(Base):
-    __slots__ = []
-
     # pylint: disable=unused-argument
     def load(self, buffer: bytes, *args, structure=None, **kwargs) -> Tuple[str, int]:
         count, = struct.unpack('<I', buffer[:4])
@@ -647,8 +642,6 @@ class CharVector(Base):
 
 
 class Vector(Base):
-    __slots__ = ['structure']
-
     def __init__(self, structure):
         self.structure = structure
 
@@ -675,8 +668,6 @@ class Vector(Base):
 
 
 class Array(Base):
-    __slots__ = ['count', 'structure', 'count_ptr', 'aligment', 'size']
-
     def __init__(self, structure, count: int = 0, aligment=True, count_ptr=None):
         assert isinstance(count, int)
         assert isinstance(aligment, bool)
@@ -717,3 +708,22 @@ class Array(Base):
 
         return results
 
+__all__ = [
+    'KeyManager',
+    'Structure',
+    'Dynamic',
+    'Byte',
+    'UInt8',
+    'Int8',
+    'UInt16',
+    'Int16',
+    'UInt32',
+    'Int32',
+    'UInt64',
+    'Int64',
+    'Float',
+    'CharArray',
+    'CharVector',
+    'Vector',
+    'Array',
+]
