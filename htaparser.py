@@ -192,9 +192,10 @@ class VertexType:
         uv1: list = [0, 0]
         uv2: list = [0, 0]
         tangent: list = [0, 0, 0, 0]
+        binormal: list = [0, 0, 0]
 
 
-class Headers(Structure, KeyManager):
+class Headers(KeyManager, Structure):
     _container_ = ('items', 'tag')
     _headers_ = {
     # Header tag table for different file version
@@ -230,7 +231,7 @@ class Headers(Structure, KeyManager):
         
         if mode == 'gam':
             tag = assign[0]
-        
+
         if mode == 'sam':
             tag = assign[1]
 
@@ -264,8 +265,12 @@ class Meta(Dynamic):
     count_node: int = 0
     size_cfg: int = 0
 
+    def post_load(self, buffer: bytes, *args, structure=None, **kwargs):
+        if kwargs['mode'] == 'gam':
+            self.count_mesh = self.count_static + self.count_triangle + self.count_skin
 
-class Bones(Dynamic, KeyManager):
+
+class Bone(Dynamic):
     class BoneSAM(Structure):
         name: CharArray(40)
         parent: Int16()
@@ -290,6 +295,17 @@ class Bones(Dynamic, KeyManager):
     scale: list = [1, 1, 1]
     inverse: list = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 
+    def post_load(self, buffer: bytes, *args, structure=None, **kwargs):
+        if not self.name:
+            self.name = f'Bone{kwargs["num"]}'
+
+
+class Bones(KeyManager, Array):
+    _container_ = (None, 'name')
+
+    def __init__(self):
+        Array.__init__(self, Bone())
+
 
 class InfluenceItem(Dynamic):
     class InfluenceItemSAM(Structure):
@@ -311,13 +327,12 @@ class InfluenceItem(Dynamic):
 
 
 class Influence(Dynamic):
-    class InfluenceSAM(Dynamic):
-        count: UInt32()
-        items: Array(InfluenceItem, count_ptr='count')
+    class InfluenceSAM(Structure):
+        items: Vector(InfluenceItem())
 
-    class InfluenceGAM():
+    class InfluenceGAM(Structure):
         count: UInt16()
-        items: Array(InfluenceItem, 4)
+        items: Array(InfluenceItem(), 4)
 
     _modes_ = {'sam': InfluenceSAM(), 'gam': InfluenceGAM()}
 
@@ -325,7 +340,7 @@ class Influence(Dynamic):
     items: list = []
 
 
-class Meshes(Dynamic, KeyManager):
+class Mesh(Dynamic):
     class MeshSAM(Structure):
         type: UInt32()
         material: Int16()
@@ -333,12 +348,96 @@ class Meshes(Dynamic, KeyManager):
         count_indices: UInt32()
         parent: Int16()
         headers: Vector(Int32(2))
-        vertexes: Array(VertexType.Vertex(), count_ptr='count_vertexes')
+        vertexes: Array(VertexType.Vertex())
         influences: Array(Influence(), count_ptr='count_vertexes')
-        indices: Array(UInt16(), count_ptr='count_indices')
+        indices: Array(UInt16(3), count_ptr='count_indices')
 
-        def filter(self, name, type, buffer: bytes, *args, structure=None, **kwargs):
-            # TODO: Process SAM loading
+        _vertex_type_ = -1
+
+        def load_filter(self, name, type, buffer: bytes, *args, structure=None, **kwargs):
+            if name == 'vertexes':
+                vertexes = list()
+                for _ in range(self.count_vertexes):
+                    vertexes.append(VertexType.Vertex())
+
+                padding = 0
+                for item_type, size in self.headers:
+                    # Load Position Array
+                    if item_type == 0:
+                        count = int(size / 4)
+                        reader = Array(Float(count), count=self.count_vertexes)
+                        content, size = reader.load(buffer[padding:])
+                        padding += size
+                        for num, item in enumerate(content):
+                            vertexes[0].position = item
+
+                    # Load Normal Array
+                    if item_type == 1:
+                        reader = Array(Float(3), count=self.count_vertexes)
+                        content, size = reader.load(buffer[padding:])
+                        padding += size
+                        for num, item in enumerate(content):
+                            vertexes[0].normal = item
+
+                    # Load Color Array
+                    if item_type == 2:
+                        reader = Array(UInt8(4), count=self.count_vertexes)
+                        content, size = reader.load(buffer[padding:])
+                        padding += size
+                        for num, item in enumerate(content):
+                            vertexes[0].color = item
+
+                    # Load UV0 Array
+                    if item_type == 3:
+                        count = int(size / 4)
+                        reader = Array(Float(count), count=self.count_vertexes)
+                        content, size = reader.load(buffer[padding:])
+                        padding += size
+                        for num, item in enumerate(content):
+                            vertexes[0].uv0 = item
+
+                    # Load UV1 Array
+                    if item_type == 4:
+                        count = int(size / 4)
+                        reader = Array(Float(count), count=self.count_vertexes)
+                        content, size = reader.load(buffer[padding:])
+                        padding += size
+                        for num, item in enumerate(content):
+                            vertexes[0].uv1 = item
+
+                    # Load UV2 Array
+                    if item_type == 5:
+                        count = int(size / 4)
+                        reader = Array(Float(count), count=self.count_vertexes)
+                        content, size = reader.load(buffer[padding:])
+                        padding += size
+                        for num, item in enumerate(content):
+                            vertexes[0].uv2 = item
+
+                    # Load TANGENT Array
+                    if item_type == 0x14:
+                        reader = Array(Float(4), count=self.count_vertexes)
+                        content, size = reader.load(buffer[padding:])
+                        padding += size
+                        for num, item in enumerate(content):
+                            vertexes[0].tangent = item
+
+                    # Load BINORMAL Array
+                    if item_type == 0x15:
+                        reader = Array(Float(3), count=self.count_vertexes)
+                        content, size = reader.load(buffer[padding:])
+                        padding += size
+                        for num, item in enumerate(content):
+                            vertexes[0].binormal = item
+
+                return vertexes, padding
+
+            if name == 'influences' and self.type == 2:
+                kwargs['count'] = self.count_vertexes
+
+            if name == 'influences' and self.type != 2:
+                return [], 0
+
             return type.load(buffer, *args, structure=structure, **kwargs)
 
     class MeshGAM(Structure):
@@ -351,19 +450,27 @@ class Meshes(Dynamic, KeyManager):
         type_vertexes: UInt32()
         count_vertexes: UInt32()
         count_indices: UInt32()
-        vertexes: Array(VertexType.Vertex(), count_ptr='count_vertexes')
-        doubles: Array(VertexType.Vertex(), count_ptr='count_vertexes')
-        influences: Array(Influence(), count_ptr='count_vertexes')
-        indices: Array(UInt16(), count_ptr='count_indices')
+        vertexes: Array(VertexType.Vertex())
+        doubles: Array(VertexType.Vertex())
+        influences: Array(Influence())
+        indices: Array(UInt16(3), count_ptr='count_indices')
 
-        def filter(self, name, type, buffer: bytes, *args, structure=None, **kwargs):
+        def load_filter(self, name, type, buffer: bytes, *args, structure=None, **kwargs):
             if name == 'vertexes':
-                kwargs['mode'] = self.type
+                kwargs['mode'] = self.type_vertexes
+                kwargs['count'] = self.count_vertexes
 
-            if name == 'doubles' and structure.type != 1:
+            if name == 'doubles' and self.type == 1:
+                kwargs['mode'] = self.type_vertexes
+                kwargs['count'] = self.count_vertexes
+
+            if name == 'doubles' and self.type != 1:
                 return [], 0
 
-            if name == 'influences' and structure.type != 2:
+            if name == 'influences' and self.type == 2:
+                kwargs['count'] = self.count_vertexes
+
+            if name == 'influences' and self.type != 2:
                 return [], 0
 
             return type.load(buffer, *args, structure=structure, **kwargs)
@@ -385,6 +492,17 @@ class Meshes(Dynamic, KeyManager):
     influences: list = []
     indices: list = []
 
+    def post_load(self, buffer: bytes, *args, structure=None, **kwargs):
+        if not self.name:
+            self.name = f'Mesh{kwargs["num"]}'
+
+
+class Meshes(KeyManager, Array):
+    _container_ = (None, 'name')
+
+    def __init__(self):
+        Array.__init__(self, Mesh())
+
 
 class AnimationChange(Dynamic):
     class AnimationChangeSAM(Structure):
@@ -397,7 +515,7 @@ class AnimationChange(Dynamic):
         type: UInt32()
         parent: Int16()
 
-    _modes_ = {'sam': AnimationChangeSAM, 'gam': AnimationChangeGAM, }
+    _modes_ = {'sam': AnimationChangeSAM(), 'gam': AnimationChangeGAM(), }
     index: int = 0
     parent: int = -1
     type: int = 0
@@ -414,22 +532,24 @@ class AnimationKey(Dynamic):
         location: Float(3)
         rotation: Float(4)
 
-    _modes_ = {'sam': AnimationKeySAM, 'gam': AnimationKeyGAM, }
+    _modes_ = {'sam': AnimationKeySAM(), 'gam': AnimationKeyGAM(), }
     bone: int = 0
     location: list = [0, 0, 0]
     rotation: list = [0, 0, 0, 1]
     scale: list = [1, 1, 1]
 
 
-class Animations(Dynamic, KeyManager):
+class Animation(Dynamic):
     class AnimationSAM(Structure):
         name: CharArray(25)
         count_frame: UInt32()
         fps: UInt32()
         next: Int32()
         count_change: UInt32()
+        count_key: Runtime(lambda *args, **kwargs: kwargs['meta'].count_node)
         changes: Array(AnimationChange(), count_ptr='count_change')
-        keys: Array(AnimationKey(), count_ptr='count_key')
+        keys: Array(Array(AnimationKey(), count_ptr='count_key'), count_ptr='count_frame')
+
 
     class AnimationGAM(Structure):
         name: CharArray(25)
@@ -440,9 +560,9 @@ class Animations(Dynamic, KeyManager):
         count_key: UInt16()
         action: Int32()
         changes: Array(AnimationChange(), count_ptr='count_change')
-        keys: Array(AnimationKey(), count_ptr='count_key')
+        keys: Array(Array(AnimationKey(), count_ptr='count_key'), count_ptr='count_frame')
 
-    _modes_ = {'sam': AnimationSAM, 'gam': AnimationGAM, }
+    _modes_ = {'sam': AnimationSAM(), 'gam': AnimationGAM(), }
     name: str = ''
     fps: int = 0
     next: int = 0
@@ -452,9 +572,12 @@ class Animations(Dynamic, KeyManager):
     count_key: int = 0
     count_action: int = 0
 
-    def __pre_init__(self, info={}, **kwargs):
-        if info.get('mode', None) == 'sam':
-            self.count_key = info.get('count_node', 0)
+
+class Animations(KeyManager, Array):
+    _container_ = (None, 'name')
+
+    def __init__(self):
+        Array.__init__(self, Animation())
 
 
 class Texture(Structure):
@@ -484,7 +607,7 @@ class Materials(Dynamic):
         shader: CharArray(100)
         textures: Array(Texture(), count_ptr='count_texture')
 
-    _modes_ = {'sam': MaterialSAM, 'gam': MaterialGAM, }
+    _modes_ = {'sam': MaterialSAM(), 'gam': MaterialGAM(), }
     diffuse: list = [0.7, 0.7, 0.7, 0.7]
     ambient: list = [0.7, 0.7, 0.7, 0.7]
     emmisive: list = [0.7, 0.7, 0.7, 0.7]
@@ -494,13 +617,15 @@ class Materials(Dynamic):
     shader: str = ''
     texures: list = []
 
-#TODO: Vector Manager
-class Skin(Structure):
-    count_skins: int = 0
-    materials: Array(Materials(), count_ptr='count_skin')
 
-    def __pre_init__(self, info={}, **kwargs):
-        self.count_skins = info.get('')
+class Skin(KeyManager, Structure):
+    materials: Array(Materials())
+    _container_ = ('materials', None)
+
+
+class Skins(KeyManager, Vector):
+    def __init__(self):
+        Vector.__init__(self, Skin())
 
 
 class MeshCollision(Structure):
@@ -510,7 +635,7 @@ class MeshCollision(Structure):
     indices: Array(UInt16(3), count_ptr='count_indices')
 
 
-class Collisions(Dynamic, KeyManager):
+class Collision(KeyManager, Dynamic):
     class SimpleColliderHTA(Structure):
         type: UInt32()
         location: Float(3)
@@ -524,7 +649,7 @@ class Collisions(Dynamic, KeyManager):
         size: Float(3)
         gametype: UInt32()
 
-    _modes_ = {'hta': SimpleColliderHTA, '113':SimpleCollider113, }
+    _modes_ = {'hta': SimpleColliderHTA(), '113':SimpleCollider113(), }
     type: int = 0
     location: list = [0, 0, 0]
     rotation: list = [0, 0, 0, 1]
@@ -532,15 +657,20 @@ class Collisions(Dynamic, KeyManager):
     gametype: int = 0
 
 
-class HierGeoms(Dynamic, KeyManager):
-    class SimpleColliderHTA(Structure):
+class Collisions(KeyManager, Vector):
+    def __init__(self):
+        Vector.__init__(self, Collision())
+
+
+class HierGeoms(KeyManager, Dynamic):
+    class HierGeomsHTA(Structure):
         type: UInt32()
         location: Float(3)
         rotation: Float(4)
         size: Float(3)
         bone: UInt32()
 
-    class SimpleCollider113(Structure):
+    class HierGeoms113(Structure):
         type: UInt32()
         location: Float(3)
         rotation: Float(4)
@@ -548,7 +678,7 @@ class HierGeoms(Dynamic, KeyManager):
         gametype: UInt32()
         bone: UInt32()
 
-    _modes_ = {'hta': SimpleColliderHTA, '113':SimpleCollider113, }
+    _modes_ = {'hta': HierGeomsHTA(), '113':HierGeoms113(), }
     type: int = 0
     location: list = [0, 0, 0]
     rotation: list = [0, 0, 0, 1]
@@ -557,14 +687,18 @@ class HierGeoms(Dynamic, KeyManager):
     bone: int = -1
 
 
-#TODO: Vector Manager
-class BoneBounds(Structure, KeyManager):
+class BoneBound(Structure):
     bone: UInt32()
     min_rotation: Float(3)
     max_rotation: Float(3)
 
 
-class Groups(Dynamic, Structure):
+class BoneBounds(KeyManager, Vector):
+    def __init__(self):
+        Vector.__init__(self, BoneBound())
+
+
+class Group(Dynamic, Structure):
     class GroupGAM(Structure):
         name: CharArray(20)
         min: UInt32()
@@ -579,12 +713,17 @@ class Groups(Dynamic, Structure):
         variants: Vector(UInt32())
 
     _container_ = (None, 'name')
-    _modes_ = {'gam': GroupGAM, 'sam': GroupSAM}
+    _modes_ = {'gam': GroupGAM(), 'sam': GroupSAM(), }
     name: str = ''
     min: int = 0
     max: int = 0
     nodes: list = []
     variants: list = []
+
+
+class Groups(KeyManager, Vector):
+    def __init__(self):
+        Vector.__init__(self, Group())
 
 
 class Parser:
@@ -594,7 +733,7 @@ class Parser:
         self.bones = Bones()
         self.meshes = Meshes()
         self.animations = Animations()
-        self.materials = Materials()
+        self.skins = Skins()
         self.mesh_collision = MeshCollision()
         self.collisions = Collisions()
         self.hier_geoms = HierGeoms()
@@ -612,46 +751,46 @@ class Parser:
         with open(fullpath, 'rb') as stream:
             content = stream.read()
 
-        self.headers.load(content, mode=mode, version=version)
+        self.headers, _ = self.headers.load(content, mode=mode, version=version)
 
         state: Headers.Header = None
 
         state = self.headers.find('META', mode)
         if state is not None:
-            self.meta.load(content[state.offset:state.offset + state.size], mode=mode, version=version)
+            self.meta, _ = self.meta.load(content[state.offset:state.offset + state.size], mode=mode, version=version)
 
         state = self.headers.find('BONES', mode)
         if state is not None:
-            self.bones.load(content[state.offset:state.offset + state.size], mode=mode, version=version)
+            self.bones, _ = self.bones.load(content[state.offset:state.offset + state.size], mode=mode, version=version, count=self.meta.count_node)
 
         state = self.headers.find('MESHES', mode)
         if state is not None:
-            self.meshes.load(content[state.offset:state.offset + state.size], mode=mode, version=version)
+            self.meshes, _ = self.meshes.load(content[state.offset:state.offset + state.size], mode=mode, version=version, count=self.meta.count_mesh)
 
         state = self.headers.find('ANIMATIONS', mode)
         if state is not None:
-            self.animations.load(content[state.offset:state.offset + state.size], mode=mode, version=version)
+            self.animations, _ = self.animations.load(content[state.offset:state.offset + state.size], mode=mode, version=version, meta=self.meta, count=self.meta.count_animation)
 
         state = self.headers.find('MATERIALS', mode)
         if state is not None:
-            self.materials.load(content[state.offset:state.offset + state.size], mode=mode, version=version)
+            self.skins, _ = self.skins.load(content[state.offset:state.offset + state.size], mode=mode, version=version, count=self.meta.count_material)
 
         state = self.headers.find('CONVEX', mode)
         if state is not None:
-            self.mesh_collision.load(content[state.offset:state.offset + state.size], mode=mode, version=version)
+            self.mesh_collision, _ = self.mesh_collision.load(content[state.offset:state.offset + state.size], mode=mode, version=version)
 
         state = self.headers.find('COLLISIONS', mode)
         if state is not None:
-            self.collisions.load(content[state.offset:state.offset + state.size], mode=mode, version=version)
+            self.collisions, _ = self.collisions.load(content[state.offset:state.offset + state.size], mode=version, version=version)
 
         state = self.headers.find('HIER_GEOM', mode)
         if state is not None:
-            self.hier_geoms.load(content[state.offset:state.offset + state.size], mode=mode, version=version)
+            self.hier_geoms, _ = self.hier_geoms.load(content[state.offset:state.offset + state.size], mode=version, version=version)
 
         state = self.headers.find('BOUNDS', mode)
         if state is not None:
-            self.bounds.load(content[state.offset:state.offset + state.size], mode=mode, version=version)
+            self.bounds, _ = self.bounds.load(content[state.offset:state.offset + state.size], mode=mode, version=version)
 
         state = self.headers.find('GROUPS', mode)
         if state is not None:
-            self.groups.load(content[state.offset:state.offset + state.size], mode=mode, version=version)
+            self.groups, _ = self.groups.load(content[state.offset:state.offset + state.size], mode=mode, version=version)

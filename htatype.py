@@ -2,54 +2,6 @@ import struct
 from typing import Any, List, Union, Tuple
 
 
-class KeyManager:
-    _container_ = (None, None)
-    _container_ptr_ = None
-
-    def load(self, buffer: bytes, *args, structure=None, **kwargs) -> Tuple[Any, int]:
-        items, size = super().load(self, buffer, *args, structure, **kwargs)
-        raise NotImplementedError
-
-    def dump(self, *args, value=None, mode=None, **kwargs) -> bytes:
-        result = super().dump(self, *args, value=None, mode=None, **kwargs)
-        raise NotImplementedError
-
-    def __getitem__(self, key):
-        assert self._container_ptr_
-        return self._container_ptr_[key]
-
-    def __setitem__(self, key, value):
-        assert self._container_ptr_
-        self._container_ptr_[key] = value
-
-    def __iter__(self):
-        assert self._container_ptr_
-        if isinstance(self._container_ptr_, dict):
-            return iter(self._container_ptr_.values())
-        return iter(self._container_ptr_)
-
-    def __len__(self):
-        assert self._container_ptr_
-        return len(self._container_ptr_)
-
-    def new(self, name=None):
-        pointer, attr = self._container_
-        if attr and not name:
-            raise AttributeError('name attribute pointer not present.')
-
-        instance = self.__class__()
-
-        if name:
-            setattr(instance, attr, name)
-            self._container_ptr_[name] = instance
-            getattr(self, pointer, instance)
-
-        else:
-            self._container_ptr_.append(instance)
-
-        return instance
-
-
 class Base:
     size = 0
 
@@ -57,59 +9,78 @@ class Base:
         raise NotImplementedError
 
 
+class Runtime(Base):
+    def __init__(self, callback):
+        self.callback = callback
+
+    def load(self, buffer: bytes, *args, structure=None, **kwargs):
+        return self.callback(buffer, *args, structure=structure, **kwargs), 0
+
+
 class Structure(Base):
-    def __init__(self, count=1):
-        if not hasattr(self, '__annotations__'):
-            raise TypeError('bad structure declaration.')
-
-        self.__count__ = count
-
-    # pylint: disable=unused-argument
-    def load(self, buffer: bytes, *args, structure=None, **kwargs) -> Tuple[Any, int]:
-        self.__pre_init__(structure=structure, **kwargs)
-
-        results = []
-        padding = 0
-        for _ in range(self.__count__):
-            instance = self.__class__()
-            # pylint: disable=no-member
-            for key, type in self.__annotations__.items():
-                value, size = self.filter(key, type, buffer[padding:], *args, structure=instance, **kwargs)
-                setattr(instance, key, value)
-                padding += size
-            results.append(instance)
-
-        if self.__count__ == 1:
-            return results[0], padding
-
-        return results, padding
-
-    # pylint: disable=unused-argument
-    def dump(self, *args, **kwarg) -> bytes:
-        results = b''
-        # pylint: disable=no-member
-        for key, type in self.__annotations__.items():
-            value = getattr(value, key)
-            results += type.dump(value)
-        return results
-
-    @property
-    def size(self):
-        results = 0
-        # pylint: disable=no-member
-        for type in self.__annotations__.values():
-            results += type.size
-        return results * self.__count__
-
-    def filter(self, name, type, buffer: bytes, *args, structure=None, **kwargs):
-        return type.load(buffer, *args, structure=structure, **kwargs)
-
-    def __pre_init__(self, **kwargs):
+    def pre_load(self, buffer: bytes, *args, structure=None, **kwargs):
         pass
 
+    def post_load(self, buffer: bytes, *args, structure=None, **kwargs):
+        pass
+
+    def load(self, buffer: bytes, *args, structure=None, **kwargs) -> Tuple[Any, int]:
+        instance = self.__class__()
+        instance.pre_load(buffer, *args, structure=instance, **kwargs)
+        padding = 0
+        for key, type in self.__annotations__.items():
+            if not isinstance(type, Base):
+                continue
+
+            value, size = instance.load_filter(key, type, buffer[padding:], *args, structure=instance, **kwargs)
+            setattr(instance, key, value)
+            padding += size
+        instance.post_load(buffer, *args, structure=instance, **kwargs)
+        return instance, padding
+
+    def load_filter(self, name, type, buffer: bytes, *args, structure=None, **kwargs):
+        return type.load(buffer, *args, structure=structure, **kwargs)
+
+
+class KeyManager:
+    _container_ = (None, None)
+    _container_ptr_ = None
+
+    def __getitem__(self, key):
+        if self._container_[1] is not None:
+            return self._container_ptr_.get(key)
+        return self._container_ptr_[key] or None
+
+    def load(self, buffer: bytes, *args, structure=None, **kwargs) -> Tuple[Any, int]:
+        value, padding = super().load(buffer, *args, structure=structure, **kwargs)
+
+        container, key = self._container_
+        if container:
+            instance = value
+            items = getattr(value, container)
+
+        else:
+            instance = self.__class__()
+            items = value
+
+        if key:
+            instance._container_ptr_ = dict()
+            for item in items:
+                instance._container_ptr_[getattr(item, key)] = item
+
+        else:
+            instance._container_ptr_ = items
+
+        return instance, padding
 
 class Dynamic(Base):
     _modes_ = dict()
+
+    def pre_load(self, buffer: bytes, *args, structure=None, **kwargs):
+        pass
+
+    def post_load(self, buffer: bytes, *args, structure=None, **kwargs):
+        pass
 
     def __init__(self, **types):
         self._modes_.update(types)
@@ -118,10 +89,15 @@ class Dynamic(Base):
     def load(self, buffer: bytes, *args, structure=None, mode=None, **kwargs) -> Tuple[Any, int]:
         provider = self._modes_[mode]
         results = self.__class__()
-        for key, mode in provider.__annotations__.items():
-            value, size = mode.load(buffer[padding:], *args, structure=self, **kwargs)
-            setattr(results, key, value)
-            padding += size
+
+        results.pre_load(buffer, *args, structure=structure, mode=mode, **kwargs)
+
+        value, padding = provider.load(buffer, *args, structure=structure, mode=mode, **kwargs)
+        for key in provider.__annotations__:
+            setattr(results, key, getattr(value, key, getattr(results, key, None)))
+
+        results.post_load(buffer, *args, structure=structure, mode=mode, **kwargs)
+
         return results, padding
 
     # pylint: disable=unused-argument
@@ -651,8 +627,10 @@ class Vector(Base):
         padding = 4
         count, = struct.unpack('<I', buffer[:4])
 
-        for _ in range(count):
-            value, size = self.structure.load(buffer[padding:], *args, **kwargs)
+        for num in range(count):
+            kwargs['num'] = num
+
+            value, size = self.structure.load(buffer[padding:], *args, structure=structure, **kwargs)
             results.append(value)
             padding += size
 
@@ -683,14 +661,19 @@ class Array(Base):
         results = list()
         padding = 0
 
-        count = self.count
+        count = self.count or kwargs.get('count', 0) or kwargs.get(self.count_ptr, 0)
         if self.count_ptr:
-            if not structure or not hasattr(structure, self.count_ptr):
+            if not structure:
+                raise AttributeError(f'structure not present.')
+
+            if not hasattr(structure, self.count_ptr):
                 raise AttributeError(f'unable to get "{self.count_ptr}" attribute from struct.')
 
             count = getattr(structure, self.count_ptr)
 
-        for _ in range(count):
+        for num in range(count):
+            kwargs['num'] = num
+
             value, size = self.structure.load(buffer[padding:], *args, structure=structure, **kwargs)
             results.append(value)
             padding += size
@@ -709,6 +692,7 @@ class Array(Base):
         return results
 
 __all__ = [
+    'Runtime',
     'KeyManager',
     'Structure',
     'Dynamic',
