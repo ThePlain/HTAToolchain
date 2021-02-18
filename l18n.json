@@ -1,0 +1,12 @@
+{
+    "title": "SimpleModelConfig",
+
+    "file": "Файл",
+    "open": "Открыть...",
+    "save": "Сохранить",
+    "save_as": "Сохранить как...",
+    "exit": "Выход",
+    "tree_head": "Содержимое",
+    "gam_file_type": "Hard Truck Apocalypse GAM",
+    "sam_file_type": "Hard Truck Apocalypse SAM"
+}
