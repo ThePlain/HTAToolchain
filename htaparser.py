@@ -512,12 +512,23 @@ class Mesh(Dynamic):
             self.name = f'Mesh{kwargs["num"]}'
 
 
-class Meshes(KeyManager, Structure):
+class Meshes(KeyManager, Dynamic):
+    class MeshesGAM(Structure):
+        mesh_count: Runtime(lambda *args, **kwargs: kwargs['meta'].count_mesh)
+        items: Array(Mesh(), count_ptr='mesh_count')
+        min_bound: Float(3)
+        max_bound: Float(3)
+
+    class MeshesSAM(Structure):
+        mesh_count: Runtime(lambda *args, **kwargs: kwargs['meta'].count_mesh)
+        items: Array(Mesh(), count_ptr='mesh_count')
+
+    _modes_ = {'gam': MeshesGAM(), 'sam': MeshesSAM()}
     _container_ = ('items', 'name')
-    mesh_count: Runtime(lambda *args, **kwargs: kwargs['meta'].count_mesh)
-    items: Array(Mesh(), count_ptr='mesh_count')
-    min_bound: Float(3)
-    max_bound: Float(3)
+    mesh_count: int = 0
+    items: list = []
+    min_bound: list = [0, 0, 0]
+    max_bound: list = [0, 0, 0]
 
 
 class AnimationChange(Dynamic):
@@ -714,7 +725,7 @@ class BoneBounds(KeyManager, Vector):
         Vector.__init__(self, BoneBound())
 
 
-class Group(Dynamic, Structure):
+class Group(Dynamic):
     class GroupGAM(Structure):
         name: CharArray(20)
         min: UInt32()

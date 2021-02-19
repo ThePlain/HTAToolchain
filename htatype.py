@@ -709,8 +709,12 @@ class Vector(Base):
         return results, padding
 
     def dump(self, values: list, *args, **kwargs) -> bytes:
-        results = struct.pack('<I', len(values))
+        if not isinstance(values, (list, set)):
+            results = struct.pack('<I', 1)
+            results += self.structure.dump(values, *args, **kwargs)
+            return results
 
+        results = struct.pack('<I', len(values))
         for item in values:
             results += self.structure.dump(item, *args, **kwargs)
 
