@@ -8,6 +8,12 @@ class Base:
     def load(self, buffer: bytes, *args, structure=None, **kwargs) -> Tuple[Any, int]:
         raise NotImplementedError
 
+    def dump(self, value, *args, mode=None, **kwargs) -> bytes:
+        raise NotImplementedError
+
+    def dump_filter(self, name, type, base, value, *args, mode=None, **kwargs):
+        return type.dump(value, *args, mode=mode, **kwargs)
+
 
 class Runtime(Base):
     def __init__(self, callback):
@@ -15,6 +21,10 @@ class Runtime(Base):
 
     def load(self, buffer: bytes, *args, structure=None, **kwargs):
         return self.callback(buffer, *args, structure=structure, **kwargs), 0
+
+        # pylint: disable=unused-argument
+    def dump(self, value, *args, mode=None, **kwargs) -> bytes:
+        return b''
 
 
 class Structure(Base):
@@ -41,15 +51,68 @@ class Structure(Base):
     def load_filter(self, name, type, buffer: bytes, *args, structure=None, **kwargs):
         return type.load(buffer, *args, structure=structure, **kwargs)
 
+    # pylint: disable=unused-argument
+    def dump(self, value, *args, mode=None, **kwargs) -> bytes:
+        content = b''
+        for key, type in self.__annotations__.items():
+
+            if not isinstance(type, Base):
+                continue
+
+            item = getattr(value, key)
+            content += self.dump_filter(key, type, value, item, *args, mode=mode, **kwargs)
+
+        return content
+
+    def dump_filter(self, name, type, base, value, *args, **kwargs):
+        return type.dump(value, *args, **kwargs)
 
 class KeyManager:
     _container_ = (None, None)
     _container_ptr_ = None
 
+    def __init__(self):
+        if self._container_[1] is not None:
+            self._container_ptr_ = dict()
+        else:
+            self._container_ptr_ = list()
+
+        if self._container_[0] is not None and self._container_[1] is not None:
+            setattr(self, self._container_[0], list())
+
     def __getitem__(self, key):
+        if isinstance(key, slice):
+            if self._container_[1] is not None:
+                return list(self._container_ptr_.values())[key.start:key.stop:key.step]
+            return self._container_ptr_[key.start:key.stop:key.step]
+
         if self._container_[1] is not None:
             return self._container_ptr_.get(key)
         return self._container_ptr_[key] or None
+
+    def __setitem__(self, key, value):
+        if self._container_[1] is not None:
+            self._container_ptr_[key] = value
+
+            if self._container_[0]:
+                getattr(self, self._container_[0]).append(value)
+
+        else:
+            self._container_ptr_.append(value)
+
+    def __iter__(self):
+        if isinstance(self._container_ptr_, dict):
+            return iter(self._container_ptr_.values())
+        return iter(self._container_ptr_)
+
+    def by_index(self, key):
+        if isinstance(self._container_ptr_, dict):
+            name = self._container_ptr_[key]
+            return self._container_ptr_[name]
+        return self._container_ptr_[key]
+
+    def __len__(self):
+        return len(self._container_ptr_)
 
     def load(self, buffer: bytes, *args, structure=None, **kwargs) -> Tuple[Any, int]:
         value, padding = super().load(buffer, *args, structure=structure, **kwargs)
@@ -72,6 +135,16 @@ class KeyManager:
             instance._container_ptr_ = items
 
         return instance, padding
+
+    def dump(self, value, *args, mode=None, **kwargs) -> bytes:
+        if isinstance(value, KeyManager):
+            if value._container_[0] is None and value._container_[1] is not None:
+                return super().dump(list(value._container_ptr_.values()), *args, mode=mode, **kwargs)
+
+            if value._container_[0] is None or isinstance(value, (Array, Vector)):
+                return super().dump(value._container_ptr_, *args, mode=mode, **kwargs)
+
+        return super().dump(value, *args, mode=mode, **kwargs)
 
 class Dynamic(Base):
     _modes_ = dict()
@@ -101,12 +174,12 @@ class Dynamic(Base):
         return results, padding
 
     # pylint: disable=unused-argument
-    def dump(self, *args, value=None, mode=None, **kwargs) -> bytes:
+    def dump(self, value, *args, mode=None, **kwargs) -> bytes:
         if not value:
             value = self
 
         provider = self._modes_[mode]
-        results = provider.dump(value)
+        results = provider.dump(value, *args, mode=mode, **kwargs)
 
         return results
 
@@ -596,10 +669,9 @@ class CharArray(Base):
         return results, self.count
 
     # pylint: disable=unused-argument
-    def dump(self, values: str) -> bytes:
-        values = values.encode('cp1251')
-        size = len(values)
-        return struct.pack(f'<I{size}B', size, *values)
+    def dump(self, values: str, *args, **kwargs) -> bytes:
+        value = values.encode('cp1251')[:self.count]
+        return value.ljust(self.count, b'\x00')
 
 
 class CharVector(Base):
@@ -611,7 +683,7 @@ class CharVector(Base):
         return results, count + 4
 
     # pylint: disable=unused-argument
-    def dump(self, values: str) -> bytes:
+    def dump(self, values: str, *args, **kwargs) -> bytes:
         values = values.encode('cp1251')
         size = len(values)
         return struct.pack(f'<I{size}B', size, *values)
@@ -636,11 +708,15 @@ class Vector(Base):
 
         return results, padding
 
-    def dump(self, values: list) -> bytes:
-        results = struct.pack('<I', len(values))
+    def dump(self, values: list, *args, **kwargs) -> bytes:
+        if not isinstance(values, (list, set)):
+            results = struct.pack('<I', 1)
+            results += self.structure.dump(values, *args, **kwargs)
+            return results
 
+        results = struct.pack('<I', len(values))
         for item in values:
-            results += self.structure.dump(item)
+            results += self.structure.dump(item, *args, **kwargs)
 
         return results
 
@@ -663,7 +739,7 @@ class Array(Base):
 
         count = self.count or kwargs.get('count', 0) or kwargs.get(self.count_ptr, 0)
         if self.count_ptr:
-            if not structure:
+            if structure is None:
                 raise AttributeError(f'structure not present.')
 
             if not hasattr(structure, self.count_ptr):
@@ -680,14 +756,15 @@ class Array(Base):
 
         return results, padding
 
-    def dump(self, values: list) -> bytes:
+    def dump(self, values: list, *args, **kwargs) -> bytes:
         results = b''
 
-        for item in values[:self.count]:
-            results += self.structure.dump(item)
+        count = self.count or len(values)
+        for item in values[:count]:
+            results += self.structure.dump(item, *args, **kwargs)
 
         if self.aligment:
-            results = results.rjust(self.size, b'\x00')
+            results = results.ljust(self.size, b'\x00')
 
         return results
 
