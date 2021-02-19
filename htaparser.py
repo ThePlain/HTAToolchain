@@ -1,6 +1,7 @@
 import os
 import struct
 from htatype import *
+__version__ = (0, 1, 0)
 
 
 class VertexType:
@@ -225,17 +226,19 @@ class Headers(KeyManager, Structure):
     def find(self, name: str, mode: str):
         assert isinstance(name, str)
         assert isinstance(mode, str)
+        tag = self.get_tag(name, mode)
+        return self._container_ptr_.get(tag, None)
 
-        assign = self._headers_.get(name, None)
+    @classmethod
+    def get_tag(cls, name: str, mode: str):
+        assign = cls._headers_.get(name, None)
         assert assign is not None
-        
+
         if mode == 'gam':
-            tag = assign[0]
+            return assign[0]
 
         if mode == 'sam':
-            tag = assign[1]
-
-        return self._container_ptr_.get(tag, None)
+            return assign[1]
 
 
 class Meta(Dynamic):
@@ -303,8 +306,8 @@ class Bone(Dynamic):
 class Bones(KeyManager, Array):
     _container_ = (None, 'name')
 
-    def __init__(self):
-        Array.__init__(self, Bone())
+    def __init__(self, *args, **kwargs):
+        Array.__init__(self, Bone(), *args, **kwargs)
 
 
 class InfluenceItem(Dynamic):
@@ -351,7 +354,6 @@ class Mesh(Dynamic):
         vertexes: Array(VertexType.Vertex())
         influences: Array(Influence(), count_ptr='count_vertexes')
         indices: Array(UInt16(3), count_ptr='count_indices')
-
         _vertex_type_ = -1
 
         def load_filter(self, name, type, buffer: bytes, *args, structure=None, **kwargs):
@@ -475,6 +477,21 @@ class Mesh(Dynamic):
 
             return type.load(buffer, *args, structure=structure, **kwargs)
 
+        def dump_filter(self, name, type, base, value, *args, **kwargs):
+            if name == 'vertexes':
+                kwargs['mode'] = base.type_vertexes
+
+            if name == 'doubles' and base.type == 1:
+                kwargs['mode'] = base.type_vertexes
+
+            if name == 'doubles' and base.type != 1:
+                return b''
+
+            if name == 'influences' and base.type != 2:
+                return b''
+
+            return type.dump(value, *args, **kwargs)
+
     _modes_ = {'sam': MeshSAM(), 'gam': MeshGAM(), }
     _container_ = (None, 'name')
 
@@ -489,19 +506,18 @@ class Mesh(Dynamic):
     count_indices: int = 0
     vertexes: list = []
     doubles: list = []
-    influences: list = []
-    indices: list = []
 
     def post_load(self, buffer: bytes, *args, structure=None, **kwargs):
         if not self.name:
             self.name = f'Mesh{kwargs["num"]}'
 
 
-class Meshes(KeyManager, Array):
-    _container_ = (None, 'name')
-
-    def __init__(self):
-        Array.__init__(self, Mesh())
+class Meshes(KeyManager, Structure):
+    _container_ = ('items', 'name')
+    mesh_count: Runtime(lambda *args, **kwargs: kwargs['meta'].count_mesh)
+    items: Array(Mesh(), count_ptr='mesh_count')
+    min_bound: Float(3)
+    max_bound: Float(3)
 
 
 class AnimationChange(Dynamic):
@@ -576,8 +592,8 @@ class Animation(Dynamic):
 class Animations(KeyManager, Array):
     _container_ = (None, 'name')
 
-    def __init__(self):
-        Array.__init__(self, Animation())
+    def __init__(self, *args, **kwargs):
+        Array.__init__(self, Animation(), *args, **kwargs)
 
 
 class Texture(Structure):
@@ -635,7 +651,7 @@ class MeshCollision(Structure):
     indices: Array(UInt16(3), count_ptr='count_indices')
 
 
-class Collision(KeyManager, Dynamic):
+class Collision(Dynamic):
     class SimpleColliderHTA(Structure):
         type: UInt32()
         location: Float(3)
@@ -728,17 +744,17 @@ class Groups(KeyManager, Vector):
 
 class Parser:
     def __init__(self):
-        self.headers = Headers()
-        self.meta = Meta()
-        self.bones = Bones()
-        self.meshes = Meshes()
-        self.animations = Animations()
-        self.skins = Skins()
-        self.mesh_collision = MeshCollision()
-        self.collisions = Collisions()
-        self.hier_geoms = HierGeoms()
-        self.bounds = BoneBounds()
-        self.groups = Groups()
+        self.headers = None
+        self.meta = None
+        self.bones = None
+        self.meshes = None
+        self.animations = None
+        self.skins = None
+        self.mesh_collision = None
+        self.collisions = None
+        self.hier_geoms = None
+        self.bounds = None
+        self.groups = None
 
     def load(self, version: str, fullpath: str):
         assert isinstance(version, str) and version in ('113', 'hta')
@@ -751,46 +767,125 @@ class Parser:
         with open(fullpath, 'rb') as stream:
             content = stream.read()
 
-        self.headers, _ = self.headers.load(content, mode=mode, version=version)
+        self.headers, _ = Headers().load(content, mode=mode, version=version)
 
         state: Headers.Header = None
 
         state = self.headers.find('META', mode)
         if state is not None:
-            self.meta, _ = self.meta.load(content[state.offset:state.offset + state.size], mode=mode, version=version)
+            self.meta, _ = Meta().load(content[state.offset:state.offset + state.size], mode=mode, version=version)
 
         state = self.headers.find('BONES', mode)
         if state is not None:
-            self.bones, _ = self.bones.load(content[state.offset:state.offset + state.size], mode=mode, version=version, count=self.meta.count_node)
+            self.bones, _ = Bones().load(content[state.offset:state.offset + state.size], mode=mode, version=version, count=self.meta.count_node)
 
         state = self.headers.find('MESHES', mode)
         if state is not None:
-            self.meshes, _ = self.meshes.load(content[state.offset:state.offset + state.size], mode=mode, version=version, count=self.meta.count_mesh)
+            self.meshes, _ = Meshes().load(content[state.offset:state.offset + state.size], mode=mode, version=version, meta=self.meta)
 
         state = self.headers.find('ANIMATIONS', mode)
         if state is not None:
-            self.animations, _ = self.animations.load(content[state.offset:state.offset + state.size], mode=mode, version=version, meta=self.meta, count=self.meta.count_animation)
+            self.animations, _ = Animations().load(content[state.offset:state.offset + state.size], mode=mode, version=version, meta=self.meta, count=self.meta.count_animation)
 
         state = self.headers.find('MATERIALS', mode)
         if state is not None:
-            self.skins, _ = self.skins.load(content[state.offset:state.offset + state.size], mode=mode, version=version, count=self.meta.count_material)
+            self.skins, _ = Skins().load(content[state.offset:state.offset + state.size], mode=mode, version=version, count=self.meta.count_material)
 
         state = self.headers.find('CONVEX', mode)
         if state is not None:
-            self.mesh_collision, _ = self.mesh_collision.load(content[state.offset:state.offset + state.size], mode=mode, version=version)
+            self.mesh_collision, _ = MeshCollision().load(content[state.offset:state.offset + state.size], mode=mode, version=version)
 
         state = self.headers.find('COLLISIONS', mode)
         if state is not None:
-            self.collisions, _ = self.collisions.load(content[state.offset:state.offset + state.size], mode=version, version=version)
+            self.collisions, _ = Collisions().load(content[state.offset:state.offset + state.size], mode=version, version=version)
 
         state = self.headers.find('HIER_GEOM', mode)
         if state is not None:
-            self.hier_geoms, _ = self.hier_geoms.load(content[state.offset:state.offset + state.size], mode=version, version=version)
+            self.hier_geoms, _ = HierGeoms().load(content[state.offset:state.offset + state.size], mode=version, version=version)
 
         state = self.headers.find('BOUNDS', mode)
         if state is not None:
-            self.bounds, _ = self.bounds.load(content[state.offset:state.offset + state.size], mode=mode, version=version)
+            self.bounds, _ = BoneBounds().load(content[state.offset:state.offset + state.size], mode=mode, version=version)
 
         state = self.headers.find('GROUPS', mode)
         if state is not None:
-            self.groups, _ = self.groups.load(content[state.offset:state.offset + state.size], mode=mode, version=version)
+            self.groups, _ = Groups().load(content[state.offset:state.offset + state.size], mode=mode, version=version)
+
+    def dump(self, version, fullpath):
+        assert isinstance(version, str) and version in ('113', 'hta')
+        assert isinstance(fullpath, str)
+
+        filename, ext = os.path.splitext(fullpath)
+        mode = ext[1:]
+        sections = dict()
+
+        if self.meta:
+            # TODO: Update meta values
+            sections['META'] = Meta().dump(self.meta, mode=mode)
+
+        if self.bones:
+            sections['BONES'] = Bones().dump(self.bones, mode=mode)
+
+        if self.meshes:
+            sections['MESHES'] = Meshes().dump(self.meshes, mode=mode)
+
+        if self.animations:
+            sections['ANIMATIONS'] = Animations().dump(self.animations, mode=mode)
+        else:
+            sections['ANIMATIONS'] = b''
+
+        if self.skins:
+            sections['MATERIALS'] = Skins().dump(self.skins, mode=mode)
+
+        if self.mesh_collision:
+            sections['CONVEX'] = MeshCollision().dump(self.mesh_collision, mode=mode)
+
+        if self.collisions:
+            sections['COLLISIONS'] = Collisions().dump(self.collisions, mode=version)
+
+        if self.hier_geoms:
+            sections['HIER_GEOM'] = HierGeoms().dump(self.hier_geoms, mode=version)
+
+        if self.bounds:
+            sections['BOUNDS'] = BoneBounds().dump(self.bounds, mode=mode)
+
+        if self.groups:
+            sections['GROUPS'] = Groups().dump(self.groups, mode=mode)
+
+        self.headers = Headers()
+        self.headers.bom = b'\x65\x63\x62\x6E\x74\x2C\x74\x00'
+        for tag_name, content in sections.items():
+            header = Headers.Header()
+            header.tag = Headers.get_tag(tag_name, mode)
+            header.size = len(content)
+            self.headers[tag_name] = header
+
+        # Type header
+        header = Headers.Header()
+        header.tag = 0xF001
+        header.size = 30
+        self.headers[header.tag] = header
+        # Version header
+        header = Headers.Header()
+        header.tag = 0xF002
+        header.size = 4
+        self.headers[header.tag] = header
+
+        offset = 12 + len(self.headers) * 16
+        for header in self.headers:
+            header.offset = offset
+            offset += header.size
+
+        content = Headers().dump(self.headers, mode=mode)
+        content += b''.join(sections.values())
+
+        if mode == 'gam':
+            content += b'IVR'.ljust(30, b'\x00')
+            content += b'\x01\x00\x00\x00'
+
+        if mode == 'sam':
+            content += b'DFT'.ljust(30, b'\x00')
+            content += b'\x02\x00\x00\x00'
+
+        with open(fullpath, 'wb') as stream:
+            stream.write(content)
