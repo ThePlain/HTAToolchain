@@ -3,7 +3,7 @@ import io
 import struct
 
 
-__version__ = '2.3.1'
+__version__ = '2.4.0'
 
 
 class IOWrapper:
@@ -353,6 +353,21 @@ class Vertex:
     uv2: list = None
     tangent: list = None
     binormal: list = None
+
+    @property
+    def copy(self):
+        vert = Vertex()
+
+        vert.location = self.location.copy() if self.location else None
+        vert.normal   = self.normal.copy()   if self.normal   else None
+        vert.color    = self.color.copy()    if self.color    else None
+        vert.uv0      = self.uv0.copy()      if self.uv0      else None
+        vert.uv1      = self.uv1.copy()      if self.uv1      else None
+        vert.uv2      = self.uv2.copy()      if self.uv2      else None
+        vert.tangent  = self.tangent.copy()  if self.tangent  else None
+        vert.binormal = self.binormal.copy() if self.binormal else None
+
+        return vert
 
     @staticmethod
     def toXYZ(vertex: Vertex, data: list):
@@ -850,7 +865,7 @@ class Meshes:
                     method(vertex, data)
                     mesh.vertices.append(vertex)
 
-                if mesh.type == 1:
+                if mesh.type != 4:
                     for data in stream.iter_unpack(struct, mesh.vertex_count):
                         vertex = Vertex()
                         method(vertex, data)
@@ -957,8 +972,8 @@ class Meshes:
                 for vertex in mesh.vertices:
                     stream.pack(struct, *method(vertex))
 
-                if mesh.type == 1:
-                    for vertex in mesh.vertices:
+                if mesh.type != 4:
+                    for vertex in mesh.doubles:
                         stream.pack(struct, *method(vertex))
 
                 if mesh.type == 2:
@@ -1340,7 +1355,8 @@ class Skins:
             skin = dict()
             for num in range(self.parser.info.materials):
                 material: Material = Material(self.parser)
-                material.name = f'Material.{skin_num:0>2}.{num:0>2}'
+                name = self.parser.model_name or 'Material'
+                material.name = f'{name}.{skin_num:0>2}.{num:0>2}'
 
                 material.diffuse = stream.unpack('<4f')
                 material.ambient = stream.unpack('<4f')
@@ -1526,6 +1542,7 @@ class Collisions:
             if self.parser.mode == '113':
                 stream.pack('<I', collision.gametype)
 
+
 class HierGeom:
     type: int = 0
     location: list = [0, 0, 0]
@@ -1597,8 +1614,8 @@ class HierGeoms:
 
 class Bound:
     node: int = 0
-    min_rotaiton: list = [0, 0, 0]
-    max_rotaiton: list = [0, 0, 0]
+    min_rotation: list = [0, 0, 0]
+    max_rotation: list = [0, 0, 0]
 
 class Bounds:
     def __init__(self, parser: Parser) -> None:
@@ -1835,6 +1852,7 @@ class Parser:
     def __init__(self) -> None:
         self.mode = 'HTA'
         self.file = 'GAM'
+        self.model_name = None
 
         self.headers = Headers(self)
         self.info = Info(self)
