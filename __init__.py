@@ -1,5 +1,8 @@
+import imp
 import os
+from typing import DefaultDict, Text
 import bpy
+import shutil
 import bpy.types
 import bpy.props
 import bpy_extras.io_utils
@@ -9,17 +12,21 @@ import math
 
 from . import parser
 
+imp.reload(parser)
+
 
 #TODO: Can't save .sam format
 #TODO: Import cannot set group variant for mesh
 #TODO: Skinned animations currently not supported (Parsing error)
+#TODO: Not export new meshes(Not added to group)
+#TODO: Make absolute data path capture
 
 
 bl_info = {
     'name': 'Hard Truck Apocalypse Tools',
     'blender': (2, 91, 0),
     'category': 'Import-Export',
-    'version': (3, 5, 10),
+    'version': (3, 5, 91),
     'desctiption': 'Import-Export Hard Truck Apocalypse GAM and SAM files',
     'support': 'TESTING',
     'author': 'ThePlain (Alexander Fateev)',
@@ -73,6 +80,7 @@ COLLIDER_TYPE = [
 ANIM_DATA_MAP = {
     'location': 'location',
     'rotation_quaternion': 'rotation',
+    'rotation_euler': 'rotation',
     'scale': 'scale',
 }
 
@@ -82,6 +90,13 @@ MATRIX_ENTITY = [
     0.0, 0.0, 1.0, 0.0,
     0.0, 0.0, 0.0, 1.0,
 ]
+
+MATRIX_SWITCH = mathutils.Matrix([
+    [1.0, 0.0, 0.0, 0.0,],
+    [0.0, 0.0, 1.0, 0.0,],
+    [0.0, 1.0, 0.0, 0.0,],
+    [0.0, 0.0, 0.0, 1.0,],
+])
 
 TEXTURE_TYPES = ('Diffuse', 'Bump', 'Lightmap', 'Cube', 'Detail')
 
@@ -116,10 +131,6 @@ class HTAConfing(bpy.types.AddonPreferences):
         name='Shader name',
         default='bumpdiffuse_envalphagloss_spec'
     )
-    skins_count: bpy.props.IntProperty(
-        name='Skins count',
-        default=8
-    )
     model_sign: bpy.props.StringProperty(
         name='Model sign',
         default=''
@@ -132,7 +143,6 @@ class HTAConfing(bpy.types.AddonPreferences):
         layout.prop(self, 'vertex_type')
         layout.prop(self, 'collider_type')
         layout.prop(self, 'shader_name')
-        layout.prop(self, 'skins_count')
         layout.prop(self, 'model_sign')
 
 
@@ -280,11 +290,6 @@ class HTAMaterial(bpy.types.PropertyGroup):
         default=preferences.shader_name
     )
 
-    skins_count: bpy.props.IntProperty(
-        name='Skin_count',
-        default=preferences.skins_count
-    )
-
 
 class HTAMaterialPanel(bpy.types.Panel):
     bl_idname = f'{__package__}.materialpanel'
@@ -300,7 +305,6 @@ class HTAMaterialPanel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         layout.prop(context.material.htatools, 'shader_name')
-        layout.prop(context.material.htatools, 'skins_count')
 
 
 class HTAImport(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
@@ -319,10 +323,38 @@ class HTAImport(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
         items=GAME_VERSION,
     )
 
+    imp_textures: bpy.props.BoolProperty(
+        name='Import Textures',
+        default=True,
+    )
+
+    imp_animation: bpy.props.BoolProperty(
+        name='Import Animations',
+        default=True,
+    )
+
+    imp_convex: bpy.props.BoolProperty(
+        name='Import Convex Collider',
+        default=True,
+    )
+
+    imp_collisions: bpy.props.BoolProperty(
+        name='Import Simple Colliders',
+        default=True,
+    )
+
+    imp_hier: bpy.props.BoolProperty(
+        name='Import Hier Geoms',
+        default=True,
+    )
+
     def execute(self, context):
         provider = parser.Parser()
         provider.mode = self.game_version
         provider.file = self.filepath[-3:].upper()
+
+        filename = os.path.basename(self.filepath)
+        provider.model_name, _ = os.path.splitext(filename)
 
         model_directory = os.path.dirname(self.filepath)
 
@@ -351,11 +383,14 @@ class HTAImport(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
                         if not filepath:
                             continue
 
-                        bpy.data.images.load(filepath, check_existing=True)
+                        if self.imp_textures:
+                            bpy.data.images.load(filepath, check_existing=True)
 
                     node = mtl.node_tree.nodes.new('ShaderNodeTexImage')
                     node.name = TEXTURE_TYPES[tex_item.type]
-                    node.image = bpy.data.images[tex_item.filename]
+
+                    if tex_item.filename in bpy.data.images:
+                        node.image = bpy.data.images[tex_item.filename]
 
                     if node.name == 'Diffuse':
                         mtl.node_tree.links.new(root.inputs['Base Color'], node.outputs['Color'])
@@ -371,46 +406,49 @@ class HTAImport(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
                         bpy.data.images[tex_item.filename].colorspace_settings.name = 'Non-Color'
 
 
-        print('Import: Collisions')
-        for item in provider.collisions:
-            obj = bpy.data.objects.new(item.name, None)
+        if self.imp_collisions:
+            print('Import: Collisions')
+            for item in provider.collisions:
+                obj = bpy.data.objects.new(item.name, None)
 
-            x, y, z = item.location
-            obj.location = [x, z, y]
+                x, y, z = item.location
+                obj.location = [x, z, y]
 
-            x, y, z, w = item.rotation
-            obj.rotation_mode = 'QUATERNION'
-            obj.rotation_quaternion = [w, -x, -z, -y]
+                x, y, z, w = item.rotation
+                obj.rotation_mode = 'QUATERNION'
+                obj.rotation_quaternion = [w, -x, -z, -y]
 
-            obj.empty_display_size = 0.5
-            obj.htatools.collider_type = str(item.type)
+                obj.empty_display_size = 0.5
+                obj.htatools.collider_type = str(item.type)
+                obj.htatools.object_type = 'COLLIDER'
 
-            x, y, z = item.scale
-            if item.type == 0:
-                obj.empty_display_type = 'CUBE'
-                obj.scale = [x, z, y]
+                x, y, z = item.scale
+                if item.type == 0:
+                    obj.empty_display_type = 'CUBE'
+                    obj.scale = [x, z, y]
 
-            elif item.type == 1:
-                obj.empty_display_type = 'SPHERE'
-                obj.scale = [x, x, x]
+                elif item.type == 1:
+                    obj.empty_display_type = 'SPHERE'
+                    obj.scale = [x, x, x]
 
-            elif item.type == 2:
-                obj.scale = [x, z, y]
+                elif item.type == 2:
+                    obj.scale = [x, z, y]
 
-            scene.collection.objects.link(obj)
+                scene.collection.objects.link(obj)
 
-        print('Import: Convex')
-        if provider.convex.used:
-            data = bpy.data.meshes.new('Convex')
-            vertices = [[x, z, y] for x, y, z in provider.convex.vertices]
-            indices = [[i2, i1, i0] for i0, i1, i2 in provider.convex.indices]
-            data.from_pydata(vertices, [], indices)
+        if self.imp_convex:
+            print('Import: Convex')
+            if provider.convex.used:
+                data = bpy.data.meshes.new('Convex')
+                vertices = [[x, z, y] for x, y, z in provider.convex.vertices]
+                indices = [[i2, i1, i0] for i0, i1, i2 in provider.convex.indices]
+                data.from_pydata(vertices, [], indices)
 
-            obj = bpy.data.objects.new('Convex', data)
-            obj.htatools.object_type = 'CONVEX'
-            obj.display_type = 'WIRE'
+                obj = bpy.data.objects.new('Convex', data)
+                obj.htatools.object_type = 'CONVEX'
+                obj.display_type = 'WIRE'
 
-            scene.collection.objects.link(obj)
+                scene.collection.objects.link(obj)
 
         print('Import: Meshes')
         for item in provider.meshes:
@@ -430,7 +468,6 @@ class HTAImport(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
                 location = mathutils.Vector([x, y, z, w or 1.0])
 
                 x, y, z, w = inverse @ location
-
                 vertices.append([x, z, y])
 
             indices = [[i2, i1, i0] for i0, i1, i2 in item.indices]
@@ -492,9 +529,10 @@ class HTAImport(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 
             scene.collection.objects.link(obj)
 
+            name = provider.model_name or 'Material'
             if item.material >= 0:
                 for skin_num, skin in enumerate(provider.skins):
-                    mtl_item = skin[f'Material.{skin_num:0>2}.{item.material:0>2}']
+                    mtl_item = skin[f'{name}.{skin_num:0>2}.{item.material:0>2}']
                     mtl = bpy.data.materials[mtl_item.name]
                     mesh.materials.append(mtl)
 
@@ -565,38 +603,43 @@ class HTAImport(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 
                 collection.objects.link(bpy.data.objects[node_item.name])
 
-        print('Import: Animations')
-        for animation in provider.animations:
-            targets = []
-            for num, frame in enumerate(animation.frames):
-                for key in frame.values():
-                    item = provider.nodes.by_index(key.node)
-                    node = bpy.data.objects[item.name]
-                    targets.append(node)
+        if self.imp_animation:
+            print('Import: Animations')
+            for animation in provider.animations:
+                targets = []
+                for num, frame in enumerate(animation.frames):
+                    for key in frame.values():
+                        item = provider.nodes.by_index(key.node)
+                        node = bpy.data.objects[item.name]
+                        targets.append(node)
 
-                    x, y, z = key.location
-                    node.location = [x, z, y]
+                        x, y, z = key.location
+                        node.location = [x, z, y]
 
-                    x, y, z, w = key.rotation
-                    node.rotation_quaternion = [w, -x, -z, -y]
+                        x, y, z, w = key.rotation
+                        node.rotation_quaternion = [w, -x, -z, -y]
 
-                    x, y, z = key.scale
-                    node.scale = [x, z, y]
+                        x, y, z = key.scale
+                        node.scale = [x, z, y]
 
-                    node.keyframe_insert(data_path='location', frame=num)
-                    node.keyframe_insert(data_path='rotation_quaternion', frame=num)
-                    node.keyframe_insert(data_path='scale', frame=num)
+                        node.keyframe_insert(data_path='location', frame=num)
+                        node.keyframe_insert(data_path='rotation_quaternion', frame=num)
+                        node.keyframe_insert(data_path='scale', frame=num)
 
-                    node.animation_data.action.name = f'{animation.name}({node.name})'
+                        node.animation_data.action.name = f'{animation.name}({node.name})'
 
-            for node in targets:
-                action = node.animation_data.action
+                for node in targets:
+                    action = node.animation_data.action
 
-                if action:
-                    nla = node.animation_data.nla_tracks.new()
-                    nla.name = action.name
-                    nla.strips.new(animation.name, action.frame_range[0], action)
-                    node.animation_data.action = None
+                    if action:
+                        nla = node.animation_data.nla_tracks.new()
+                        nla.name = action.name
+
+                        if '(' in nla.name:
+                            nla.name = nla.name[:nla.name.index('(')]
+
+                        nla.strips.new(animation.name, action.frame_range[0], action)
+                        node.animation_data.action = None
 
         return {'FINISHED'}
 
@@ -617,7 +660,22 @@ class HTAExport(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
         items=GAME_VERSION,
     )
 
+    export_images: bpy.props.BoolProperty(
+        name='Export Textures',
+        default=False,
+    )
+
+    make_backup: bpy.props.BoolProperty(
+        name='Create File Backup',
+        default=False,
+    )
+
     def execute(self, context):
+        if self.make_backup and os.path.isfile(self.filepath):
+            shutil.copy(self.filepath, self.filepath + '.bak')
+
+        model_directory = os.path.dirname(self.filepath)
+
         provider = parser.Parser()
         provider.mode = self.game_version
         provider.file = self.filepath[-3:].upper()
@@ -634,13 +692,20 @@ class HTAExport(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
             x, y, z = item.location
             provider.nodes[item.name].location = [x, z, y]
 
-            w, x, y, z = item.rotation_quaternion
+            if item.rotation_mode == 'QUATERNION':
+                w, x, y, z = item.rotation_quaternion
+
+            if item.rotation_mode == 'XYZ':
+                w, x, y, z = item.rotation_euler.to_quaternion().normalized()
+
             provider.nodes[item.name].rotation = [-x, -z, -y, w]
 
             x, y, z = item.scale
             provider.nodes[item.name].scale = [x, z, y]
 
-            provider.nodes[item.name].inverse = matrix_flatten(item.matrix_world.inverted())
+            if item.htatools.draw_mode == '4':
+                provider.nodes[item.name].matrix = matrix_flatten(item.matrix_world.inverted().transposed())
+
             node_index = provider.nodes.index(item.name)
 
             group_name = 'Main'
@@ -654,7 +719,6 @@ class HTAExport(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
                 group.name = group_name
                 provider.groups[group_name] = group
 
-
             if item.htatools.bound_used:
                 bound = parser.Bound()
                 bound.node = node_index
@@ -662,12 +726,14 @@ class HTAExport(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
                 x = -math.radians(item.htatools.bound_min_x)
                 y = -math.radians(item.htatools.bound_min_z)
                 z = -math.radians(item.htatools.bound_min_y)
-                bound.min_rotaiton = [x, z, y]
+                bound.min_rotation = [x, z, y]
 
                 x = -math.radians(item.htatools.bound_max_x)
                 y = -math.radians(item.htatools.bound_max_z)
                 z = -math.radians(item.htatools.bound_max_y)
-                bound.max_rotaiton = [x, z, y]
+                bound.max_rotation = [x, z, y]
+            
+                provider.bounds.items.append(bound)
 
             if item.animation_data and item.animation_data.nla_tracks:
                 tracks = item.animation_data.nla_tracks
@@ -702,10 +768,16 @@ class HTAExport(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
                             x, y, z = key.location or [0, 0, 0]
                             key.location = [x, z, y]
 
-                            rot = mathutils.Quaternion(key.rotation or [1, 0, 0, 0])
-                            rot.normalize()
-                            w, x, y, z = rot
-                            key.rotation = [x, z, y, w]
+                            if len(key.rotation) == 4:
+                                rot = mathutils.Quaternion(key.rotation or [1, 0, 0, 0])
+                                rot.normalize()
+                                w, x, y, z = rot
+                                key.rotation = [-x, -z, -y, w]
+
+                            elif len(key.rotation) == 3:
+                                rot = mathutils.Euler(key.rotation or [0, 0, 0], 'XYZ')
+                                w, x, y, z = rot.to_quaternion().normalized()
+                                key.rotation = [-x, -z, -y, w]
 
                             x, y, z = key.scale or [1, 1, 1]
                             key.scale = [x, z, y]
@@ -734,18 +806,24 @@ class HTAExport(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
                 x, y, z = item.location
                 collision.location = [x, z, y]
 
-                w, x, y, z = item.rotation_quaternion
+
+                if item.rotation_mode == 'QUATERNION':
+                    w, x, y, z = item.rotation_quaternion
+
+                if item.rotation_mode == 'XYZ':
+                    w, x, y, z = item.rotation_euler.to_quaternion().normalized()
+
                 collision.rotation = [-x, -z, -y, w]
 
-                collision.type = int(item.htatools.collision_type)
+                collision.type = int(item.htatools.collider_type)
                 x, y, z = item.scale
-                if item.type == 0:
+                if collision.type == 0:
                     collision.scale = [x, z, y]
 
-                elif item.type == 1:
+                elif collision.type == 1:
                     collision.scale = [x, x, x]
 
-                elif item.type == 2:
+                elif collision.type == 2:
                     collision.scale = [x, z, y]
 
                 provider.collisions.items.append(collision)
@@ -761,9 +839,9 @@ class HTAExport(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
 
                 for face in bm.faces:
                     provider.convex.indices.append([
-                        face.loops[0].vert.index,
-                        face.loops[1].vert.index,
                         face.loops[2].vert.index,
+                        face.loops[1].vert.index,
+                        face.loops[0].vert.index,
                     ])
 
                 bm.free()
@@ -778,10 +856,22 @@ class HTAExport(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
                         if type_name in material.node_tree.nodes:
                             pointer = material.node_tree.nodes[type_name]
 
+                            if self.export_images and not pointer.image.name.endswith('tga'):
+                                pointer.image.name = pointer.image.name.replace('.dds', '.tga')
+
                             texture = parser.Texture()
                             texture.filename = pointer.image.name
                             texture.type = type_num
                             texture.uv = 0
+
+                            if self.export_images:
+                                tex_path = os.path.join(model_directory, pointer.image.name)
+
+                                if pointer.image.file_format != 'TARGA':
+                                    pointer.image.file_format = 'TARGA'
+
+                                pointer.image.filepath_raw = tex_path
+                                pointer.image.save()
 
                             mtl.textures.append(texture)
 
@@ -805,7 +895,6 @@ class HTAExport(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
 
                 mesh.material = material_index
                 mesh.vertex_type = int(item.htatools.vertex_type)
-                mesh.vertex_size = 48
 
                 data = item.data.copy()
 
@@ -820,6 +909,8 @@ class HTAExport(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
                 data.calc_tangents()
 
                 verts = dict()
+                local = dict()
+
                 uv_layers = data.uv_layers
                 uv_names = list(data.uv_layers.keys())
 
@@ -833,10 +924,49 @@ class HTAExport(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
 
                         vert = data.vertices[vert_id]
 
-                        _vert = parser.Vertex()
-                        verts[vert_id] = _vert
+                        _data = parser.Vertex()
 
-                        px, pz, py = item.matrix_world @ vert.co
+                        tx, ty, tz = data.loops[loop_id].tangent
+                        tw = data.loops[loop_id].bitangent_sign
+                        _data.tangent = [tx, tz, ty, tw]
+
+                        if len(uv_names) >= 1:
+                            layer = uv_layers[uv_names[0]]
+                            ux, uy = layer.data[loop_id].uv
+                            _data.uv0 = [ux, 1 - uy]
+
+                        if len(uv_names) >= 2:
+                            layer = uv_layers[uv_names[1]]
+                            ux, uy = layer.data[loop_id].uv
+                            _data.uv1 = [ux, 1 - uy]
+
+                        if len(uv_names) >= 3:
+                            layer = uv_layers[uv_names[2]]
+                            ux, uy = layer.data[loop_id].uv
+                            _data.uv2 = [ux, 1 - uy]
+
+                        if 'color' in data.vertex_colors:
+                            layer = data.vertex_colors['color']
+                            color = list(layer.data[loop_id].color)
+                            r, g, b, a = [int(v * 255) for v in color]
+                            _data.color = [r, g, b, a]
+
+                        px, py, pz = vert.co
+                        nx, ny, nz = data.loops[loop_id].normal
+
+                        _data.location = [px, pz, py]
+                        _data.normal = [nx, nz, ny]
+
+                        local[vert_id] = _data.copy
+
+                        if mesh.type == 4:
+                            px, py, pz = item.matrix_world @ vert.co
+                            nx, ny, nz, _ = item.matrix_world @ mathutils.Vector([nx, ny, nz, 0.0])
+
+                            _data.location = [px, pz, py]
+                            _data.normal = [nx, nz, ny]
+
+                        verts[vert_id] = _data
 
                         provider.meshes.bvh_min[0] = min(provider.meshes.bvh_min[0], px)
                         provider.meshes.bvh_min[1] = min(provider.meshes.bvh_min[1], py)
@@ -846,43 +976,15 @@ class HTAExport(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
                         provider.meshes.bvh_max[1] = max(provider.meshes.bvh_max[1], py)
                         provider.meshes.bvh_max[2] = max(provider.meshes.bvh_max[2], pz)
 
-                        _vert.location = [px, py, pz]
-
-                        normal = data.loops[loop_id].normal.to_4d()
-                        normal.w = 0
-                        normal = (item.matrix_world @ normal).to_3d().normalized()
-                        nx, ny, nz = normal
-                        _vert.normal = [nx, nz, ny]
-
-                        tx, ty, tz = data.loops[loop_id].tangent
-                        tw = data.loops[loop_id].bitangent_sign
-                        _vert.tangent = [tx, tz, ty, tw]
-
-                        if len(uv_names) >= 1:
-                            layer = uv_layers[uv_names[0]]
-                            ux, uy = layer.data[loop_id].uv
-                            _vert.uv0 = [ux, 1 - uy]
-
-                        if len(uv_names) >= 2:
-                            layer = uv_layers[uv_names[1]]
-                            ux, uy = layer.data[loop_id].uv
-                            _vert.uv1 = [ux, 1 - uy]
-
-                        if len(uv_names) >= 3:
-                            layer = uv_layers[uv_names[2]]
-                            ux, uy = layer.data[loop_id].uv
-                            _vert.uv2 = [ux, 1 - uy]
-
-                        if 'color' in data.vertex_colors:
-                            layer = data.vertex_colors['color']
-                            color = list(layer.data[loop_id].color)
-                            r, g, b, a = [int(v * 255) for v in color]
-                            _vert.color = [r, g, b, a]
-
                 order = list(verts.keys())
                 order.sort()
                 for vert_id in order:
                     mesh.vertices.append(verts[vert_id])
+
+                order = list(local.keys())
+                order.sort()
+                for vert_id in order:
+                    mesh.doubles.append(local[vert_id])
 
                 bpy.data.meshes.remove(data)
                 provider.meshes.items[mesh.name] = mesh
