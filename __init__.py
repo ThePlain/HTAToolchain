@@ -26,7 +26,7 @@ bl_info = {
     'name': 'Hard Truck Apocalypse Tools',
     'blender': (2, 91, 0),
     'category': 'Import-Export',
-    'version': (3, 5, 92),
+    'version': (3, 5, 93),
     'desctiption': 'Import-Export Hard Truck Apocalypse GAM and SAM files',
     'support': 'TESTING',
     'author': 'ThePlain (Alexander Fateev)',
@@ -973,12 +973,12 @@ class HTAExport(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
                         verts[vert_id] = _data
 
                         provider.meshes.bvh_min[0] = min(provider.meshes.bvh_min[0], px)
-                        provider.meshes.bvh_min[1] = min(provider.meshes.bvh_min[1], py)
-                        provider.meshes.bvh_min[2] = min(provider.meshes.bvh_min[2], pz)
+                        provider.meshes.bvh_min[1] = min(provider.meshes.bvh_min[1], pz)
+                        provider.meshes.bvh_min[2] = min(provider.meshes.bvh_min[2], py)
 
                         provider.meshes.bvh_max[0] = max(provider.meshes.bvh_max[0], px)
-                        provider.meshes.bvh_max[1] = max(provider.meshes.bvh_max[1], py)
-                        provider.meshes.bvh_max[2] = max(provider.meshes.bvh_max[2], pz)
+                        provider.meshes.bvh_max[1] = max(provider.meshes.bvh_max[1], pz)
+                        provider.meshes.bvh_max[2] = max(provider.meshes.bvh_max[2], py)
 
                 order = list(verts.keys())
                 order.sort()
