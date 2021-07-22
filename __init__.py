@@ -26,7 +26,7 @@ bl_info = {
     'name': 'Hard Truck Apocalypse Tools',
     'blender': (2, 91, 0),
     'category': 'Import-Export',
-    'version': (3, 5, 91),
+    'version': (3, 5, 92),
     'desctiption': 'Import-Export Hard Truck Apocalypse GAM and SAM files',
     'support': 'TESTING',
     'author': 'ThePlain (Alexander Fateev)',
@@ -862,7 +862,11 @@ class HTAExport(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
                             texture = parser.Texture()
                             texture.filename = pointer.image.name
                             texture.type = type_num
+
                             texture.uv = 0
+                            if pointer.inputs and pointer.inputs[0].links:
+                                uvnode = pointer.inputs[0].links[0].from_node
+                                texture.uv = item.data.uv_layers.keys().index(uvnode.uv_map)
 
                             if self.export_images:
                                 tex_path = os.path.join(model_directory, pointer.image.name)
