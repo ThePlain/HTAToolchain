@@ -9,24 +9,42 @@ import bpy_extras.io_utils
 import bmesh
 import mathutils
 import math
+import pathlib
 
-from . import parser
+from . import htaparser
 
-imp.reload(parser)
+imp.reload(htaparser)
 
+#FIX: Fix item by index selection
+#FIX: Renamed parser module
+#FIX: bl_idname must contain only lowercase chars
+#FIX: Apply smooth for imported meshes
+#FIX: Fix for node or mesh name collision
+#FIX: Fix type hint for keyset methods
+#FIX: Fix Influence weight capture
+#FIX: Fix animation parsing error
+#FIX: Added new object type for skinned meshes
+#FIX: Added sort for convex mesh
+#FIX: Remove double convex mesh after export
 
+#TODO: Export Selected
+#TODO: Import vertex weight
+#TODO: Export vertex weight
+#TODO: Import JOINTS as native armature
+#TODO: Export JOINTS as object
+#TODO: Fix JOINTS transformations
 #TODO: Can't save .sam format
+
 #TODO: Import cannot set group variant for mesh
-#TODO: Skinned animations currently not supported (Parsing error)
 #TODO: Not export new meshes(Not added to group)
-#TODO: Make absolute data path capture
+#TODO: Smooth for UVSeam
 
 
 bl_info = {
     'name': 'Hard Truck Apocalypse Tools',
-    'blender': (2, 91, 0),
+    'blender': (2, 93, 0),
     'category': 'Import-Export',
-    'version': (3, 5, 93),
+    'version': (3, 5, 106),
     'desctiption': 'Import-Export Hard Truck Apocalypse GAM and SAM files',
     'support': 'TESTING',
     'author': 'ThePlain (Alexander Fateev)',
@@ -61,6 +79,7 @@ VERTEX_TYPE = [
 
 DRAW_MODE = [
     ('1', 'Animated', 'Mode for animated objects'),
+    ('2', 'Skinned', 'Mode for skinned objects'),
     ('4', 'Static', 'Mode for static objects'),
 ]
 
@@ -251,7 +270,7 @@ class HTAObject(bpy.types.PropertyGroup):
 
 
 class HTAObjectPanel(bpy.types.Panel):
-    bl_idname = f'{__package__}.objectpanel'
+    bl_idname = f'{__package__}.objectpanel'.lower()
     bl_label = 'HTA Object'
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
@@ -292,7 +311,7 @@ class HTAMaterial(bpy.types.PropertyGroup):
 
 
 class HTAMaterialPanel(bpy.types.Panel):
-    bl_idname = f'{__package__}.materialpanel'
+    bl_idname = f'{__package__}.materialpanel'.lower()
     bl_label = 'HTA Material'
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
@@ -308,7 +327,7 @@ class HTAMaterialPanel(bpy.types.Panel):
 
 
 class HTAImport(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
-    bl_idname = f'{__package__}.modelimport'
+    bl_idname = f'{__package__}.modelimport'.lower()
     bl_label = 'HTA Model Import (.gam/.sam)'
 
     filename_ext = ".gam"
@@ -348,8 +367,14 @@ class HTAImport(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
         default=True,
     )
 
+    use_tex2mtl_name: bpy.props.BoolProperty(
+        name='Cast texture to material name',
+        default=True,
+    )
+
     def execute(self, context):
-        provider = parser.Parser()
+        provider = htaparser.Parser()
+        provider.t2m_name = True
         provider.mode = self.game_version
         provider.file = self.filepath[-3:].upper()
 
@@ -510,6 +535,9 @@ class HTAImport(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
                         r, g, b, a = [v / 255 for v in vert.color]
                         layer.data[loop_id].color = [r, g, b, a]
 
+            for f in mesh.polygons:
+                f.use_smooth = True
+
             obj = bpy.data.objects.new(obj_item.name, mesh)
             obj.htatools.draw_mode = str(item.type)
             obj.htatools.vertex_type = str(item.vertex_type)
@@ -529,10 +557,9 @@ class HTAImport(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 
             scene.collection.objects.link(obj)
 
-            name = provider.model_name or 'Material'
             if item.material >= 0:
-                for skin_num, skin in enumerate(provider.skins):
-                    mtl_item = skin[f'{name}.{skin_num:0>2}.{item.material:0>2}']
+                for skin in provider.skins.items:
+                    mtl_item = provider.skins.by_index(skin, item.material)
                     mtl = bpy.data.materials[mtl_item.name]
                     mesh.materials.append(mtl)
 
@@ -645,7 +672,7 @@ class HTAImport(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 
 
 class HTAExport(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
-    bl_idname = f'{__package__}.modelexport'
+    bl_idname = f'{__package__}.modelexport'.lower()
     bl_label = 'HTA Model Export (.gam/.sam)'
 
     filename_ext = ".gam"
@@ -676,7 +703,7 @@ class HTAExport(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
 
         model_directory = os.path.dirname(self.filepath)
 
-        provider = parser.Parser()
+        provider = htaparser.Parser()
         provider.mode = self.game_version
         provider.file = self.filepath[-3:].upper()
 
@@ -686,7 +713,7 @@ class HTAExport(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
             if item.htatools.object_type != 'DEFAULT':
                 continue
 
-            provider.nodes[item.name] = parser.Node()
+            provider.nodes[item.name] = htaparser.Node()
             provider.nodes[item.name].name = item.name
 
             x, y, z = item.location
@@ -715,12 +742,12 @@ class HTAExport(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
 
             group = provider.groups[group_name]
             if not group:
-                group = parser.Group(provider)
+                group = htaparser.Group(provider)
                 group.name = group_name
                 provider.groups[group_name] = group
 
             if item.htatools.bound_used:
-                bound = parser.Bound()
+                bound = htaparser.Bound()
                 bound.node = node_index
 
                 x = -math.radians(item.htatools.bound_min_x)
@@ -732,7 +759,7 @@ class HTAExport(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
                 y = -math.radians(item.htatools.bound_max_z)
                 z = -math.radians(item.htatools.bound_max_y)
                 bound.max_rotation = [x, z, y]
-            
+
                 provider.bounds.items.append(bound)
 
             if item.animation_data and item.animation_data.nla_tracks:
@@ -742,7 +769,7 @@ class HTAExport(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
                         action = strip.action
 
                         if track.name not in provider.animations:
-                            anim = parser.Animation(provider)
+                            anim = htaparser.Animation(provider)
                             anim.name = track.name
                             provider.animations[track.name] = anim
                             anim.fps = 60
@@ -754,7 +781,7 @@ class HTAExport(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
                         anim = provider.animations[track.name]
 
                         for frame in range(anim.frame_count):
-                            key = parser.Key()
+                            key = htaparser.Key()
                             key.location = []
                             key.rotation = []
                             key.scale = []
@@ -802,7 +829,7 @@ class HTAExport(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
                 group_name = item.users_collection[0].name
 
             if item.htatools.object_type == 'COLLIDER':
-                collision = parser.Collision()
+                collision = htaparser.Collision()
                 x, y, z = item.location
                 collision.location = [x, z, y]
 
@@ -829,26 +856,37 @@ class HTAExport(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
                 provider.collisions.items.append(collision)
 
             if item.htatools.object_type == 'CONVEX':
+                data = item.data.copy()
+
                 bm = bmesh.new()
-                bm.from_mesh(item.data)
+                bm.from_mesh(data)
                 bmesh.ops.triangulate(bm, faces=bm.faces[:])
-
-                for vert in bm.verts:
-                    x, y, z = item.matrix_world @ vert.co
-                    provider.convex.vertices.append([x, z, y])
-
-                for face in bm.faces:
-                    provider.convex.indices.append([
-                        face.loops[2].vert.index,
-                        face.loops[1].vert.index,
-                        face.loops[0].vert.index,
-                    ])
-
+                bm.to_mesh(data)
                 bm.free()
+
+                verts = dict()
+
+                for face in data.polygons:
+                    vertexes = [face.vertices[0], face.vertices[1], face.vertices[2],]
+                    provider.convex.indices.append(vertexes[::-1])
+
+                    for loop_id, vert_id in zip(face.loop_indices, vertexes):
+                        if vert_id in verts:
+                            continue
+
+                        px, py, pz = data.vertices[vert_id].co
+                        verts[vert_id] = [px, pz, py]
+
+                order = list(verts.keys())
+                order.sort()
+                for vert_id in order:
+                    provider.convex.vertices.append(verts[vert_id])
+
+                bpy.data.meshes.remove(data)
 
             if item.type == 'MESH' and item.htatools.object_type == 'DEFAULT':
                 for num, material in enumerate(item.data.materials):
-                    mtl = parser.Material(provider)
+                    mtl = htaparser.Material(provider)
                     mtl.name = material.name
                     mtl.shader = material.htatools.shader_name
 
@@ -859,7 +897,7 @@ class HTAExport(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
                             if self.export_images and not pointer.image.name.endswith('tga'):
                                 pointer.image.name = pointer.image.name.replace('.dds', '.tga')
 
-                            texture = parser.Texture()
+                            texture = htaparser.Texture()
                             texture.filename = pointer.image.name
                             texture.type = type_num
 
@@ -882,7 +920,7 @@ class HTAExport(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
                     provider.skins.set_skin(num, mtl)
 
 
-                mesh = parser.Mesh(provider)
+                mesh = htaparser.Mesh(provider)
                 mesh.name = item.data.name
                 mesh.type = int(item.htatools.draw_mode)
 
@@ -928,7 +966,7 @@ class HTAExport(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
 
                         vert = data.vertices[vert_id]
 
-                        _data = parser.Vertex()
+                        _data = htaparser.Vertex()
 
                         tx, ty, tz = data.loops[loop_id].tangent
                         tw = data.loops[loop_id].bitangent_sign
