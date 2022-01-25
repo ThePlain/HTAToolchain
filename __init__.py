@@ -180,7 +180,7 @@ def search_file(name: str) -> str:
     return None
 
 
-def HTAObject_update(self, context):
+def HTA_PG_Object_update(self, context):
     preferences = bpy.context.preferences.addons[__package__].preferences
 
     if context.object:
@@ -201,19 +201,19 @@ def HTAObject_update(self, context):
             self.collider_type = preferences.collider_type
 
 
-class HTAObject(bpy.types.PropertyGroup):
+class HTA_PG_Object(bpy.types.PropertyGroup):
     draw_mode: bpy.props.EnumProperty(
         name='Draw mode',
         default='4',
         items=DRAW_MODE,
-        update=HTAObject_update
+        update=HTA_PG_Object_update
     )
 
     object_type: bpy.props.EnumProperty(
         name='Object type',
         default='DEFAULT',
         items=OBJECT_TYPE,
-        update=HTAObject_update
+        update=HTA_PG_Object_update
     )
 
     vertex_type: bpy.props.EnumProperty(
@@ -269,8 +269,8 @@ class HTAObject(bpy.types.PropertyGroup):
     )
 
 
-class HTAObjectPanel(bpy.types.Panel):
-    bl_idname = f'{__package__}.objectpanel'.lower()
+class HTA_PT_Object(bpy.types.Panel):
+    bl_idname = f'HTA_PT_Object'
     bl_label = 'HTA Object'
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
@@ -303,15 +303,15 @@ class HTAObjectPanel(bpy.types.Panel):
         row.prop(context.object.htatools, 'bound_max_z')
 
 
-class HTAMaterial(bpy.types.PropertyGroup):
+class HTA_PG_Material(bpy.types.PropertyGroup):
     shader_name: bpy.props.StringProperty(
         name='Shader name',
         default=preferences.shader_name
     )
 
 
-class HTAMaterialPanel(bpy.types.Panel):
-    bl_idname = f'{__package__}.materialpanel'.lower()
+class HTA_PT_Material(bpy.types.Panel):
+    bl_idname = f'HTA_PT_Material'
     bl_label = 'HTA Material'
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
@@ -1057,13 +1057,13 @@ def menu_func_export(self, context):
 
 
 def register():
-    bpy.utils.register_class(HTAObject)
-    bpy.types.Object.htatools = bpy.props.PointerProperty(type=HTAObject)
-    bpy.utils.register_class(HTAObjectPanel)
+    bpy.utils.register_class(HTA_PG_Object)
+    bpy.types.Object.htatools = bpy.props.PointerProperty(type=HTA_PG_Object)
+    bpy.utils.register_class(HTA_PT_Object)
 
-    bpy.utils.register_class(HTAMaterial)
-    bpy.types.Material.htatools = bpy.props.PointerProperty(type=HTAMaterial)
-    bpy.utils.register_class(HTAMaterialPanel)
+    bpy.utils.register_class(HTA_PG_Material)
+    bpy.types.Material.htatools = bpy.props.PointerProperty(type=HTA_PG_Material)
+    bpy.utils.register_class(HTA_PT_Material)
 
     bpy.utils.register_class(HTAImport)
     bpy.utils.register_class(HTAExport)
@@ -1073,11 +1073,11 @@ def register():
 
 
 def unregister():
-    bpy.utils.unregister_class(HTAObject)
-    bpy.utils.unregister_class(HTAObjectPanel)
+    bpy.utils.unregister_class(HTA_PG_Object)
+    bpy.utils.unregister_class(HTA_PT_Object)
 
-    bpy.utils.unregister_class(HTAMaterial)
-    bpy.utils.unregister_class(HTAMaterialPanel)
+    bpy.utils.unregister_class(HTA_PG_Material)
+    bpy.utils.unregister_class(HTA_PT_Material)
 
     bpy.utils.unregister_class(HTAImport)
     bpy.utils.unregister_class(HTAExport)
