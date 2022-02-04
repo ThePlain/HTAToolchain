@@ -44,7 +44,7 @@ bl_info = {
     'name': 'Hard Truck Apocalypse Tools',
     'blender': (2, 93, 0),
     'category': 'Import-Export',
-    'version': (3, 5, 106),
+    'version': (3, 5, 110),
     'desctiption': 'Import-Export Hard Truck Apocalypse GAM and SAM files',
     'support': 'TESTING',
     'author': 'ThePlain (Alexander Fateev)',

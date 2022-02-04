@@ -5,7 +5,7 @@ import struct
 from typing import List
 
 
-__version__ = '2.4.9'
+__version__ = '2.4.13'
 
 
 class IOWrapper:
@@ -1696,6 +1696,9 @@ class Group:
         self.nodes = list()
         self.variants = dict()
 
+    def __len__(self) -> int:
+        return len(self.variants)
+
     def add_variant(self, variant: int, node: int):
         if variant not in self.variants:
             self.variants[variant] = list()
@@ -1762,7 +1765,9 @@ class Groups:
         return size
 
     def recalculate(self):
-        self.parser.info.config = len(self.parser.groups.items)
+        self.parser.info.config = 1
+        for group in self.items.values():
+            self.parser.info.config *= (len(group) or 1)
 
     def load(self, stream: IOWrapper):
         if not self.parser.headers.set_tag('GROUPS', stream):
