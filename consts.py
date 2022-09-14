@@ -1,3 +1,5 @@
+preferences: object = None
+
 
 TEXTURE_TYPES: list[str] = [
     'DIFFUSE',

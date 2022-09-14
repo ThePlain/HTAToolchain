@@ -1,3 +1,4 @@
+from genericpath import isfile
 import imp
 import os
 import bpy
@@ -13,11 +14,12 @@ import pathlib
 from . import htaparser
 imp.reload(htaparser)
 
-
+from . import utils
 from . import consts
 from . import params
 from . import panels
 
+imp.reload(utils)
 imp.reload(consts)
 imp.reload(params)
 imp.reload(panels)
@@ -27,7 +29,7 @@ bl_info = {
     'name': 'Hard Truck Apocalypse Tools',
     'blender': (2, 93, 0),
     'category': 'Import-Export',
-    'version': (3, 5, 112),
+    'version': (3, 5, 113),
     'desctiption': 'Import-Export Hard Truck Apocalypse GAM and SAM files',
     'support': 'TESTING',
     'author': 'ThePlain (Alexander Fateev)',
@@ -107,7 +109,7 @@ def matrix_flatten(matrix: mathutils.Matrix) -> list:
 class HTAConfing(bpy.types.AddonPreferences):
     bl_idname = __package__
 
-    game_path: bpy.props.StringProperty(
+    path: bpy.props.StringProperty(
         name='Game path', 
         subtype='DIR_PATH',
     )
@@ -137,7 +139,7 @@ class HTAConfing(bpy.types.AddonPreferences):
 
     def draw(self, context):
         layout = self.layout
-        layout.prop(self, 'game_path')
+        layout.prop(self, 'path')
         layout.prop(self, 'game_version')
         layout.prop(self, 'vertex_type')
         layout.prop(self, 'collider_type')
@@ -147,13 +149,14 @@ class HTAConfing(bpy.types.AddonPreferences):
 
 bpy.utils.register_class(HTAConfing)
 preferences = bpy.context.preferences.addons[__package__].preferences
+consts.preferences = preferences
 
 
 def search_file(name: str) -> str:
-    if not preferences.game_path:
+    if not preferences.path:
         return None
 
-    for root, _, files in os.walk(preferences.game_path):
+    for root, _, files in os.walk(preferences.path):
         if name in files:
             return os.path.join(root, name)
 
@@ -383,7 +386,18 @@ class HTAImport(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
                         filepath = os.path.join(model_directory, tex_item.filename)
 
                         if not os.path.isfile(filepath):
-                            filepath = search_file(tex_item.filename)
+                            mapping = utils.load_texture_mapping(self, True)
+
+                            if tex_item.filename in mapping:
+                                self.report({'INFO'}, f'Found mapped texture: {tex_item.filename}')
+                                filepath = os.path.join(preferences.path, mapping[tex_item.filename])
+
+                            else:
+                                self.report({'WARNING'}, f'Wildcard texture search: {tex_item.filename}!')
+                                filepath = search_file(tex_item.filename)
+
+                            if not os.path.isfile(filepath):
+                                filepath = None
 
                         if not filepath:
                             continue
