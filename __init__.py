@@ -1,6 +1,5 @@
 import imp
 import os
-from typing import DefaultDict, Text
 import bpy
 import shutil
 import bpy.types
@@ -12,39 +11,23 @@ import math
 import pathlib
 
 from . import htaparser
-
 imp.reload(htaparser)
 
-#FIX: Fix item by index selection
-#FIX: Renamed parser module
-#FIX: bl_idname must contain only lowercase chars
-#FIX: Apply smooth for imported meshes
-#FIX: Fix for node or mesh name collision
-#FIX: Fix type hint for keyset methods
-#FIX: Fix Influence weight capture
-#FIX: Fix animation parsing error
-#FIX: Added new object type for skinned meshes
-#FIX: Added sort for convex mesh
-#FIX: Remove double convex mesh after export
 
-#TODO: Export Selected
-#TODO: Import vertex weight
-#TODO: Export vertex weight
-#TODO: Import JOINTS as native armature
-#TODO: Export JOINTS as object
-#TODO: Fix JOINTS transformations
-#TODO: Can't save .sam format
+from . import consts
+from . import params
+from . import panels
 
-#TODO: Import cannot set group variant for mesh
-#TODO: Not export new meshes(Not added to group)
-#TODO: Smooth for UVSeam
+imp.reload(consts)
+imp.reload(params)
+imp.reload(panels)
 
 
 bl_info = {
     'name': 'Hard Truck Apocalypse Tools',
     'blender': (2, 93, 0),
     'category': 'Import-Export',
-    'version': (3, 5, 110),
+    'version': (3, 5, 112),
     'desctiption': 'Import-Export Hard Truck Apocalypse GAM and SAM files',
     'support': 'TESTING',
     'author': 'ThePlain (Alexander Fateev)',
@@ -116,9 +99,6 @@ MATRIX_SWITCH = mathutils.Matrix([
     [0.0, 1.0, 0.0, 0.0,],
     [0.0, 0.0, 0.0, 1.0,],
 ])
-
-TEXTURE_TYPES = ('Diffuse', 'Bump', 'Lightmap', 'Cube', 'Detail')
-
 
 def matrix_flatten(matrix: mathutils.Matrix) -> list:
     return list(sum(map(list, matrix), []))
@@ -412,16 +392,17 @@ class HTAImport(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
                             bpy.data.images.load(filepath, check_existing=True)
 
                     node = mtl.node_tree.nodes.new('ShaderNodeTexImage')
-                    node.name = TEXTURE_TYPES[tex_item.type]
+                    node.name = consts.TEXTURE_TYPES[tex_item.type]
+                    node.label = consts.TEXTURE_TYPES[tex_item.type]
 
                     if tex_item.filename in bpy.data.images:
                         node.image = bpy.data.images[tex_item.filename]
 
-                    if node.name == 'Diffuse':
+                    if node.name == 'DIFFUSE':
                         mtl.node_tree.links.new(root.inputs['Base Color'], node.outputs['Color'])
                         mtl.node_tree.links.new(root.inputs['Alpha'], node.outputs['Alpha'])
 
-                    if node.name == 'Bump':
+                    if node.name == 'BUMP':
                         filter = mtl.node_tree.nodes.new('ShaderNodeNormalMap')
 
                         mtl.node_tree.links.new(root.inputs['Normal'], filter.outputs['Normal'])
@@ -890,7 +871,7 @@ class HTAExport(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
                     mtl.name = material.name
                     mtl.shader = material.htatools.shader_name
 
-                    for type_num, type_name in enumerate(TEXTURE_TYPES):
+                    for type_num, type_name in enumerate(consts.TEXTURE_TYPES):
                         if type_name in material.node_tree.nodes:
                             pointer = material.node_tree.nodes[type_name]
 
@@ -1057,6 +1038,9 @@ def menu_func_export(self, context):
 
 
 def register():
+    params.register()
+    panels.register()
+
     bpy.utils.register_class(HTA_PG_Object)
     bpy.types.Object.htatools = bpy.props.PointerProperty(type=HTA_PG_Object)
     bpy.utils.register_class(HTA_PT_Object)
@@ -1073,6 +1057,9 @@ def register():
 
 
 def unregister():
+    panels.unregister()
+    params.unregister()
+
     bpy.utils.unregister_class(HTA_PG_Object)
     bpy.utils.unregister_class(HTA_PT_Object)
 
