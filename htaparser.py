@@ -1820,6 +1820,7 @@ class Groups:
                 stream.pack(f'<I{len(group.nodes)}I', len(group.nodes), *group.nodes)
 
             stream.pack('<I', len(group.variants))
+            print(group.variants)
             for num in range(len(group.variants)):
                 variant = group.variants[num]
 
